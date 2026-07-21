@@ -220,6 +220,17 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
 .ytable tr.tot td{border-top:2px solid var(--ink);border-bottom:none;font-weight:700;padding-top:8px}
 .ytable td.z{color:var(--line)}
 .ytap{cursor:pointer}
+/* month list filters */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px}
+.chips::-webkit-scrollbar{display:none}
+.chips{scrollbar-width:none}
+.chips button{flex:none;padding:8px 13px;border-radius:20px;font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.03em;text-transform:uppercase;background:var(--card-2);border:1.5px solid var(--line);color:var(--stone);white-space:nowrap}
+.chips button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.subttl{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11px;
+  color:var(--stone);margin:0 2px 10px;font-weight:600;gap:10px}
+.subttl b{color:var(--ink);font-size:13px;font-weight:700}
+.subttl .pos{color:var(--ok)!important}
 </style>
 </head>
 <body>
@@ -775,10 +786,47 @@ function catSheet(kind){
       S.cats[kind]=S.cats[kind].filter(x=>x&&x!=='—');save();closeSheet();render();toast('Categorías guardadas');};
   };wire();
 }
-function allMonthSheet(){
-  const list=txMonth(curMonth).slice().sort((a,b)=>b.date.localeCompare(a.date));
-  openSheet(`<h2>${MONTHS_ES[curMonth]} 2026<button class="x" data-close>✕</button></h2>
-    <div>${list.map(rowHtml).join('')||'<div class="empty">Sin movimientos.</div>'}</div>`);
+let mfBucket='all', mfCat='all';
+function allMonthSheet(fresh){
+  if(fresh!==false){mfBucket='all';mfCat='all';}
+  drawMonthList();
+}
+function drawMonthList(){
+  const all=txMonth(curMonth).slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  const BF=[['all','Todo'],['gf','Fijos'],['gv','Variables'],['aho','Ahorro'],['inv','Inversión'],['income','Ingresos']];
+  // apply bucket filter
+  let list = mfBucket==='all' ? all
+    : mfBucket==='income' ? all.filter(t=>t.type==='income')
+    : all.filter(t=>t.bucket===mfBucket && t.type!=='income');
+  // categories available within the bucket-filtered set
+  const cats=[...new Set(list.map(t=>t.cat))].sort((a,b)=>a.localeCompare(b));
+  if(mfCat!=='all' && !cats.includes(mfCat)) mfCat='all';
+  if(mfCat!=='all') list=list.filter(t=>t.cat===mfCat);
+  // subtotals
+  const gasto=list.filter(t=>t.type!=='income').reduce((a,t)=>a+t.amount,0);
+  const ingreso=list.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  let sub='';
+  if(gasto) sub+=`<span>Total: <b>${money(gasto)}</b></span>`;
+  if(ingreso) sub+=`<span>Ingresos: <b class="pos">+${money(ingreso).replace(cur(),cur())}</b></span>`;
+  if(!sub) sub='<span>Sin movimientos</span>';
+
+  openSheet(`
+    <h2>${MONTHS_ES[curMonth]} 2026<button class="x" data-close>✕</button></h2>
+    <div class="chips" id="mfChips">
+      ${BF.map(([k,l])=>`<button data-mfb="${k}" class="${mfBucket===k?'on':''}">${l}</button>`).join('')}
+    </div>
+    ${cats.length?`<div class="field" style="margin-bottom:10px"><select id="mfCat">
+      <option value="all">Todas las categorías (${cats.length})</option>
+      ${cats.map(c=>`<option value="${c.replace(/"/g,'&quot;')}" ${mfCat===c?'selected':''}>${c}</option>`).join('')}
+    </select></div>`:''}
+    <div class="subttl">${sub}<span>${list.length} mov.</span></div>
+    <div id="mfList">${list.map(rowHtml).join('')||'<div class="empty">Nada con este filtro.</div>'}</div>
+  `);
+  // wire filters (re-render in place)
+  document.getElementById('mfChips').onclick=e=>{const b=e.target.closest('[data-mfb]');if(!b)return;
+    if(mfBucket!==b.dataset.mfb){mfBucket=b.dataset.mfb;mfCat='all';}drawMonthList();};
+  const sel=document.getElementById('mfCat');
+  if(sel)sel.onchange=e=>{mfCat=e.target.value;drawMonthList();};
 }
 
 /* ---------- YEAR view (mirrors the Totales tab) ---------- */
