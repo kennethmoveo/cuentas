@@ -231,6 +231,14 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
   color:var(--stone);margin:0 2px 10px;font-weight:600;gap:10px}
 .subttl b{color:var(--ink);font-size:13px;font-weight:700}
 .subttl .pos{color:var(--ok)!important}
+/* bulk fixed */
+.brow{display:flex;align-items:center;gap:11px;padding:10px 2px;border-bottom:1px solid var(--line)}
+.brow.off{opacity:.42}
+.bcat{flex:1;font-size:13.5px;font-weight:600;line-height:1.2}
+.bcat small{display:block;font-family:var(--mono);font-size:9px;color:var(--rust);font-weight:400;margin-top:2px;letter-spacing:.02em}
+.bamt{display:flex;align-items:center;gap:4px;background:var(--card);border:1.5px solid var(--line);border-radius:9px;padding:6px 9px;width:112px;flex:none}
+.bamt span{font-family:var(--mono);font-size:12px;color:var(--stone)}
+.bamt input{border:none;background:none;outline:none;font-family:var(--mono);font-size:15px;font-weight:700;width:100%;text-align:right;padding:0;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -266,6 +274,8 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
     <div class="eyebrow">Presupuesto por bolsa</div>
     <div class="buckets" id="buckets"></div>
 
+    <button class="linkbtn" id="bulkBtn" style="margin-top:12px;background:var(--lime);color:var(--lime-ink);border:1.5px solid #000;border-style:solid;font-weight:800">＋ Cargar gastos fijos del mes</button>
+
     <div class="eyebrow" style="margin-top:18px">Últimos movimientos</div>
     <div class="card" id="recentCard"></div>
   </section>
@@ -284,11 +294,15 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
 
   <!-- INVERSIONES -->
   <section class="view" id="v-inv">
-    <div class="eyebrow">Inversiones · objetivo 12.5% del ingreso</div>
-    <div class="card hero" style="margin-bottom:14px">
-      <div class="lbl">Portafolio total</div>
-      <div class="big mono" id="invTotal">₪0</div>
-      <div class="sub">Distribución actual vs objetivo</div>
+    <div class="eyebrow">Inversiones · 12.5% del ingreso se aparta para invertir</div>
+    <div class="card hero" id="poolHero" style="cursor:pointer">
+      <div class="lbl">Para invertir</div>
+      <div class="big mono" id="invPool">₪0</div>
+      <div class="sub" id="invSub">Portafolio invertido: ₪0 · toca para ajustar</div>
+    </div>
+    <div class="gbtns" style="margin:-2px 0 16px">
+      <button class="add" id="poolAdd">+ Agregar para invertir</button>
+      <button class="use" id="deployBtn">Invertir</button>
     </div>
     <div class="card">
       <div class="eyebrow" style="margin:0 0 10px">Rebalanceo</div>
@@ -313,8 +327,6 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
     <div class="card">
       <div class="setrow"><div class="k">Moneda<small>Símbolo mostrado</small></div>
         <input class="mini" id="setCur" style="width:70px;text-align:center" maxlength="3"></div>
-      <div class="setrow"><div class="k">Nombre de tu pareja<small>Para gastos compartidos</small></div>
-        <input class="mini" id="setPartner" style="width:120px;text-align:right"></div>
       <div class="setrow"><div class="k">Recordatorio diario<small>Avísame si no registro (app abierta)</small></div>
         <div class="sw" id="setRemind"><i></i></div></div>
     </div>
@@ -381,10 +393,10 @@ const CAT = {
 };
 const SEED_HISTORY = {"income": [{"source": "Sueldo", "months": {"0": 8480.0, "1": 6714.0, "2": 5805.0, "4": 3852.0, "5": 4301.0, "6": 19494.51}}, {"source": "Extras", "months": {"0": 349.6, "3": 17100.0, "4": 17100.0}}], "gf": [{"cat": "Alquiler", "months": {"0": 5400.0, "1": 5400.0, "2": 2835.0, "3": 2835.0, "4": 2835.0, "5": 4230.0, "6": 4230.0}}, {"cat": "Agua", "months": {"0": 91.26, "1": 91.26, "2": 101.33, "3": 101.33, "4": 52.33, "5": 52.33}}, {"cat": "Gas", "months": {"0": 8.1, "1": 8.1, "2": 13.19, "3": 13.19, "4": 14.85, "5": 14.85}}, {"cat": "Luz", "months": {"0": 74.61, "1": 74.61, "2": 86.59, "3": 97.11, "4": 85.18}}, {"cat": "Arnona/Vaad Habait", "months": {"0": 253.71, "1": 253.71, "2": 130.56, "3": 130.56, "4": 130.44, "5": 130.44, "6": 134.51, "7": 134.51}}, {"cat": "Internet + Tele", "months": {"0": 145.21, "1": 145.21, "2": 44.5, "3": 44.5, "4": 65.5, "5": 77.0, "6": 77.0}}, {"cat": "Clalit", "months": {"0": 81.0, "1": 81.0, "2": 81.0, "3": 81.0, "4": 81.0, "5": 82.0, "6": 82.0}}, {"cat": "Youtube/Futbol/HBO", "months": {"0": 57.2, "1": 57.2, "2": 82.2, "3": 82.2, "4": 82.2, "5": 82.2, "6": 82.2}}, {"cat": "CapCut/VPN", "months": {"0": 60.0, "1": 60.0, "2": 60.0, "3": 30.65, "4": 30.65, "5": 30.65, "6": 30.65}}, {"cat": "Gmail/Autotel", "months": {"0": 12.0, "1": 12.0, "2": 22.0, "3": 22.0, "4": 22.0, "5": 22.0, "6": 22.0}}, {"cat": "Donaciones", "months": {"0": 100.0, "1": 100.0, "2": 100.0, "3": 100.0, "4": 100.0, "5": 100.0, "6": 100.0}}, {"cat": "Contador", "months": {"0": 177.0, "1": 177.0}}, {"cat": "Gym", "months": {"0": 208.75, "1": 208.75, "2": 208.75, "3": 208.75, "4": 208.75, "5": 208.75, "6": 208.75}}, {"cat": "Celular", "months": {"0": 45.0, "1": 45.0, "2": 45.0, "3": 26.0, "4": 26.0, "5": 26.0, "6": 26.0}}, {"cat": "Bituaj Leumi", "months": {"0": 376.0, "1": 213.0, "2": 213.0, "3": 213.0, "4": 213.0, "5": 213.0, "6": 213.0}}], "gv": [{"cat": "Comida", "months": {"0": 159.19, "1": 860.65, "2": 606.1, "3": 1040.8, "4": 1073.65, "5": 916.61, "6": 1669.95}}, {"cat": "Porro", "months": {"0": 244.0, "1": 411.5, "2": 903.25, "3": 751.5, "4": 570.0, "5": 1064.5, "6": 645.0}}, {"cat": "Salidas", "months": {"0": 189.0, "1": 378.9, "2": 130.5, "3": 146.0, "4": 200.0, "5": 235.3, "6": 284.85}}, {"cat": "Música", "months": {"0": 400.0, "4": 150.0, "5": 300.0}}, {"cat": "Súper/Farmacia", "months": {"0": 474.19, "1": 1352.89, "2": 1360.96, "3": 881.33, "4": 1384.92, "5": 1185.5, "6": 667.71}}, {"cat": "Ropa", "months": {"0": 130.0}}, {"cat": "Transporte", "months": {"0": 297.5, "1": 664.35, "2": 84.7, "3": 636.0, "4": 503.0, "5": 931.4, "6": 500.55}}, {"cat": "Otros", "months": {"0": 163.0, "1": 486.73, "2": 526.52, "3": 345.0, "4": 900.2, "5": 537.0}}]};
 const SEED_SAVINGS=[
-  {name:'Equipamiento prod. musical',pct:.15,target:30000,balance:22686.86},
-  {name:'Emergencias',pct:.15,target:null,balance:11416.05},
-  {name:'New life',pct:.35,target:300000,balance:51228.59},
-  {name:'Viajes y Ropa',pct:.35,target:null,balance:892.12},
+  {name:'Equipamiento prod. musical',pct:.15,target:30000,balance:22686.86,usedBefore:1254},
+  {name:'Emergencias',pct:.15,target:null,balance:11416.05,usedBefore:17588.10},
+  {name:'New life',pct:.35,target:300000,balance:51228.59,usedBefore:9480.33},
+  {name:'Viajes y Ropa',pct:.35,target:null,balance:892.12,usedBefore:9903.72},
 ];
 const SEED_INV=[
   {name:'U.S. Large',target:.25,value:31730.23},{name:'U.S. Mid',target:.20,value:21481.83},
@@ -413,6 +425,7 @@ function freshState(){
     cats:JSON.parse(JSON.stringify(CAT)),
     savings:SEED_SAVINGS.map(g=>({id:uid(),...g})),
     investments:SEED_INV.map(i=>({id:uid(),...i})),
+    investPool:0,
     debts:SEED_DEBTS.map(d=>({id:uid(),...d})),
     tx,
     seeded:true,
@@ -420,8 +433,13 @@ function freshState(){
 }
 function load(){
   const raw=DB.get('cuentas_v1');
-  if(raw){try{S=JSON.parse(raw);return}catch(e){}}
+  if(raw){try{S=JSON.parse(raw);migrate();return}catch(e){}}
   S=freshState(); save();
+}
+function migrate(){
+  if(S.investPool===undefined)S.investPool=0;
+  if(Array.isArray(S.savings))S.savings.forEach(g=>{if(g.usedBefore===undefined){const sd=SEED_SAVINGS.find(x=>x.name===g.name);g.usedBefore=sd?sd.usedBefore:0;}});
+  save();
 }
 function save(){ DB.set('cuentas_v1',JSON.stringify(S)); }
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -441,6 +459,12 @@ const inMonth=(d,m)=>d&&d.slice(0,7)===mkey(m);
 const txMonth=m=>S.tx.filter(t=>inMonth(t.date,m));
 function incomeOf(m){return txMonth(m).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);}
 function spentOf(b,m){return txMonth(m).filter(t=>t.bucket===b&&(t.type==='expense'||t.type==='saving'||t.type==='invest')).reduce((a,t)=>a+t.amount,0);}
+function budgetUsed(b,m){
+  const tx=txMonth(m).filter(t=>t.bucket===b);
+  if(b==='aho') return tx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
+  if(b==='inv') return tx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
+  return tx.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1900);}
 
 /* ---------- render root ---------- */
@@ -486,7 +510,7 @@ function renderInicio(){
   const inc0=inc||0;
   const wrap=document.getElementById('buckets');wrap.innerHTML='';
   ['gf','gv','aho','inv'].forEach(b=>{
-    const alloc=inc0*S.alloc[b], spent=spentOf(b,curMonth), resta=alloc-spent;
+    const alloc=inc0*S.alloc[b], spent=budgetUsed(b,curMonth), resta=alloc-spent;
     const pct=alloc>0?Math.min(spent/alloc*100,100):(spent>0?100:0);
     const over=spent>alloc&&alloc>0;
     const isSave=b==='aho'||b==='inv';
@@ -510,15 +534,16 @@ function renderInicio(){
 function rowHtml(t){
   const isInc=t.type==='income';
   const col=isInc?'var(--ok)':(BUCKETS[t.bucket]?BUCKETS[t.bucket].hex:'#888');
-  const init=(t.cat||'?').replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9]/g,'').slice(0,2).toUpperCase();
+  const title=(t.note&&t.note!=='Import 2026')?t.note:t.cat;
+  const init=(title||'?').replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9]/g,'').slice(0,2).toUpperCase();
   const d=t.date.slice(8,10)+' '+MONTHS_ES[+t.date.slice(5,7)-1];
   let extra='';
-  if(t.shared) extra=`<span class="pill share">${S.settings.partner}</span>`;
-  if(t.goal){const g=S.savings.find(x=>x.id===t.goal)||S.investments.find(x=>x.id===t.goal);if(g)extra+=`<span class="pill">${g.name}</span>`;}
+  if(t.bucket!=='gf') extra+=`<span>·</span><span>${t.cat}</span>`;
+  if(t.goal){const g=S.savings.find(x=>x.id===t.goal)||S.investments.find(x=>x.id===t.goal);if(g&&g.name!==t.cat)extra+=`<span class="pill">${g.name}</span>`;}
   return `<div class="row" data-tx="${t.id}">
     <div class="chip" style="background:${col}">${init}</div>
-    <div class="info"><div class="t1">${t.cat}${t.note&&t.note!=='Import 2026'?' · '+t.note:''}</div>
-      <div class="t2"><span>${d}</span>${extra}${t.shared?`<span>total ${money(t.total)}</span>`:''}</div></div>
+    <div class="info"><div class="t1">${title}</div>
+      <div class="t2"><span>${d}</span>${extra}</div></div>
     <div class="amt ${isInc?'pos':''}">${isInc?'+':'−'}${money(t.amount).replace(cur(),cur())}</div>
   </div>`;
 }
@@ -533,11 +558,13 @@ function renderAhorros(){
   S.savings.forEach(g=>{
     const prog=g.target?Math.min(g.balance/g.target*100,100):null;
     const monthShare=alloc*(g.pct||0);
+    const usedApp=S.tx.filter(t=>t.goal===g.id&&t.amount<0).reduce((a,t)=>a-t.amount,0);
+    const totalUsed=(g.usedBefore||0)+usedApp;
     const card=document.createElement('div');card.className='card goal';
     card.innerHTML=`
       <div class="top"><span class="gn">${g.name}</span><span class="gp">${Math.round((g.pct||0)*100)}% · ${money(monthShare)}/mes</span></div>
       <div class="bal">${money(g.balance)}</div>
-      <div class="obj">${g.target?`meta ${money(g.target)} · ${prog.toFixed(0)}%`:'sin meta fijada'}</div>
+      <div class="obj">${g.target?`meta ${money(g.target)} · ${prog.toFixed(0)}%`:'sin meta fijada'}${totalUsed>0?` · utilizado ${money(totalUsed)}`:''}</div>
       ${g.target?`<div class="track" style="margin-top:9px"><div class="fill" style="width:${prog}%;background:var(--aho)"></div></div>`:''}
       <div class="gbtns"><button class="add" data-goaladd="${g.id}">+ Aportar</button><button class="use" data-goaluse="${g.id}">Usar</button><button class="use" data-goaledit="${g.id}" style="flex:.5">⚙</button></div>`;
     list.appendChild(card);
@@ -546,8 +573,10 @@ function renderAhorros(){
 
 /* ---------- INVERSIONES ---------- */
 function renderInv(){
+  const pool=S.investPool||0;
   const total=S.investments.reduce((a,i)=>a+i.value,0);
-  document.getElementById('invTotal').textContent=money(total);
+  document.getElementById('invPool').textContent=money(pool);
+  document.getElementById('invSub').textContent=`Portafolio invertido: ${money(total)} · toca para ajustar`;
   const tgt=S.investments.reduce((a,i)=>a+i.target,0)||1;
   const body=document.getElementById('rebalBody');body.innerHTML='';
   S.investments.forEach(i=>{
@@ -577,7 +606,6 @@ function renderMas(){
     (S.debts.length?`<div class="row" style="border-top:2px solid var(--ink)"><div class="info"><div class="t1">Total por cobrar</div></div><div class="amt pos">${money(totalDebt)}</div></div>`:'');
   // settings inputs
   document.getElementById('setCur').value=S.settings.currency;
-  document.getElementById('setPartner').value=S.settings.partner;
   document.getElementById('setRemind').classList.toggle('on',!!S.settings.remind);
   // alloc
   const ac=document.getElementById('allocCard');
@@ -611,9 +639,8 @@ function drawAddSheet(){
   const types=[['expense','Fijo','gf'],['expense','Variable','gv'],['income','Ingreso'],['saving','Ahorro'],['invest','Inversión']];
   const isType=(t,b)=> st.type===t && (b?st.bucket===b:true) && !(t==='expense'&&!b);
   const catList = st.type==='income'?S.cats.income : st.type==='expense'?S.cats[st.bucket]
-    : st.type==='saving'?S.savings.map(g=>g.name):S.investments.map(i=>i.name);
-  const goalSelect = (st.type==='saving'||st.type==='invest');
-  const arr = st.type==='saving'?S.savings:st.type==='invest'?S.investments:[];
+    : st.type==='saving'?S.savings.map(g=>g.name):[];
+  const goalSelect = (st.type==='saving');
   const today=new Date();const dstr=`2026-${String(curMonth+1).padStart(2,'0')}-${String(Math.min(today.getDate(),28)).padStart(2,'0')}`;
 
   openSheet(`
@@ -626,23 +653,13 @@ function drawAddSheet(){
       <button data-t="invest" class="${st.type==='invest'?'on':''}">Invertir</button>
     </div>
     <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
-    <div class="field"><label class="fl">${goalSelect?(st.type==='saving'?'Meta':'Índice'):'Categoría'}</label>
-      <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>
-
-    ${st.type==='expense'?`
-    <div class="toggle" id="shareTog">
-      <div class="lbl2">Compartido con ${S.settings.partner}<small>Registra solo tu parte en el presupuesto</small></div>
-      <div class="sw ${st.shared?'on':''}"><i></i></div></div>
-    ${st.shared?`
-      <div class="split">
-        <div class="field"><label class="fl">Total pagado</label><input class="txt mono" id="totalIn" type="number" inputmode="decimal" placeholder="0" value="${st.total||''}"></div>
-        <div class="field"><label class="fl">Mi parte</label><input class="txt mono" id="mineIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}"></div>
-      </div>
-      <div class="shareinfo" id="shareInfo"></div>`:''}
-    `:''}
+    ${st.type==='invest'
+      ? `<div class="field"><div class="hint" style="margin:0">Se suma a tu dinero <b>para invertir</b>. Cuando lo pongas en un índice, usá <b>Invertir</b> en la pestaña Inversiones.</div></div>`
+      : `<div class="field"><label class="fl">${st.type==='saving'?'Meta':'Categoría'}</label>
+         <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
 
     <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
-    <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="ej. cena con amigos" value="${st.note&&st.note!=='Import 2026'?st.note:''}"></div>
+    ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&st.note!=='Import 2026'?st.note:''}"></div>`:''}
 
     <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
     ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
@@ -653,20 +670,6 @@ function drawAddSheet(){
     st.type=b.dataset.t; if(b.dataset.b)st.bucket=b.dataset.b;
     st.cat=null; st.goal=null; st.amount=document.getElementById('amtIn').value;
     drawAddSheet();};
-  // share toggle
-  const stog=document.getElementById('shareTog');
-  if(stog)stog.onclick=()=>{st.shared=!st.shared;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
-  // share math
-  function updShare(){
-    const tot=parseFloat(document.getElementById('totalIn')?.value||0);
-    const mine=parseFloat(document.getElementById('mineIn')?.value||0);
-    const info=document.getElementById('shareInfo');
-    if(info){const other=tot-mine; info.innerHTML=`Tú registras <b>${money(mine)}</b> en tu presupuesto.<br>${S.settings.partner} pone <b>${money(other)}</b>. Anótalo en Splitwise.`;}
-    document.getElementById('amtIn').value=mine||'';
-  }
-  if(st.shared){['totalIn','mineIn'].forEach(id=>{const el=document.getElementById(id);el&&el.addEventListener('input',()=>{
-    if(id==='totalIn'&&!document.getElementById('mineIn').value){document.getElementById('mineIn').value=(parseFloat(document.getElementById('totalIn').value||0)/2).toFixed(2);}
-    updShare();});}); updShare();}
 
   document.getElementById('saveBtn').onclick=commitAdd;
   const del=document.getElementById('delBtn'); if(del)del.onclick=()=>{S.tx=S.tx.filter(t=>t.id!==st.editId);save();closeSheet();render();toast('Movimiento eliminado');};
@@ -674,20 +677,20 @@ function drawAddSheet(){
 function commitAdd(){
   const st=sheetState;
   let amt=parseFloat(document.getElementById('amtIn').value||0);
-  const cat=document.getElementById('catIn').value;
+  const catEl=document.getElementById('catIn');
+  const cat=st.type==='invest'?'Para invertir':(catEl?catEl.value:'');
   const date=document.getElementById('dateIn').value||`2026-${String(curMonth+1).padStart(2,'0')}-15`;
-  const note=document.getElementById('noteIn').value.trim();
+  const note=(document.getElementById('noteIn')?.value||'').trim();
   let total=amt, shared=false;
-  if(st.type==='expense'&&st.shared){shared=true;total=parseFloat(document.getElementById('totalIn').value||0);amt=parseFloat(document.getElementById('mineIn').value||0);}
   if(!amt||amt<=0){toast('Escribe un monto');return;}
   const bucket = st.type==='income'?'income':st.type==='expense'?st.bucket:st.type==='saving'?'aho':'inv';
-  let goal=null;
-  if(st.type==='saving'){const g=S.savings.find(x=>x.name===cat);if(g){goal=g.id;g.balance+=amt;}}
-  if(st.type==='invest'){const i=S.investments.find(x=>x.name===cat);if(i){goal=i.id;i.value+=amt;}}
-  const rec={id:st.editId||uid(),type:st.type,bucket,cat,amount:amt,total,shared,date,note,goal};
+  let goal=null, kind=undefined;
+  if(st.type==='saving'){const g=S.savings.find(x=>x.name===cat);if(g){goal=g.id;if(!st.editId)g.balance+=amt;}}
+  if(st.type==='invest'){kind='pool';if(!st.editId)S.investPool=(S.investPool||0)+amt;}
+  const rec={id:st.editId||uid(),type:st.type,bucket,cat,amount:amt,total,shared,date,note,goal,kind};
   if(st.editId){S.tx=S.tx.map(t=>t.id===st.editId?rec:t);}else{S.tx.push(rec);}
   save();closeSheet();render();
-  toast(st.type==='income'?'Ingreso registrado':st.type==='saving'?'Ahorro aportado':st.type==='invest'?'Inversión registrada':'Gasto registrado');
+  toast(st.type==='income'?'Ingreso registrado':st.type==='saving'?'Ahorro aportado':st.type==='invest'?'Agregado para invertir':'Gasto registrado');
   // switch to relevant view
   if(st.type==='saving')go('ahorros'); else if(st.type==='invest')go('inv');
 }
@@ -752,6 +755,43 @@ function indexSheet(i){
     save();closeSheet();render();toast('Índice guardado');};
   const d=document.getElementById('iDel');if(d)d.onclick=()=>{S.investments=S.investments.filter(x=>x.id!==i.id);save();closeSheet();render();toast('Índice eliminado');};
 }
+function poolAddSheet(){
+  openSheet(`<h2>Agregar para invertir<button class="x" data-close>✕</button></h2>
+    <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" autofocus></div>
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="2026-${String(curMonth+1).padStart(2,'0')}-15"></div>
+    <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="noteIn" placeholder="aparte del mes para invertir"></div>
+    <button class="save" id="pa">Agregar al saldo</button>`);
+  document.getElementById('pa').onclick=()=>{
+    const amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
+    const date=document.getElementById('dateIn').value;const note=(document.getElementById('noteIn').value||'').trim();
+    S.investPool=(S.investPool||0)+amt;
+    S.tx.push({id:uid(),type:'invest',bucket:'inv',cat:'Para invertir',amount:amt,total:amt,shared:false,date,note,kind:'pool'});
+    save();closeSheet();render();toast('Agregado para invertir');};
+}
+function deploySheet(){
+  if(!S.investments.length){toast('Añade un índice primero');return;}
+  const pool=S.investPool||0;
+  openSheet(`<h2>Invertir<button class="x" data-close>✕</button></h2>
+    <div class="hint" style="margin:0 0 10px">Disponible para invertir: <b>${money(pool)}</b></div>
+    <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" autofocus></div>
+    <div class="field"><label class="fl">¿En qué índice?</label><select id="ixIn">${S.investments.map(i=>`<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="2026-${String(curMonth+1).padStart(2,'0')}-15"></div>
+    <button class="save" id="dp">Invertir</button>`);
+  document.getElementById('dp').onclick=()=>{
+    const amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
+    const ixId=document.getElementById('ixIn').value;const ix=S.investments.find(x=>x.id===ixId);
+    const date=document.getElementById('dateIn').value;
+    S.investPool=(S.investPool||0)-amt; if(ix)ix.value+=amt;
+    S.tx.push({id:uid(),type:'invest',bucket:'inv',cat:ix?ix.name:'Índice',amount:amt,total:amt,shared:false,date,note:'Invertido',kind:'deploy',goal:ixId});
+    save();closeSheet();render();toast('Inversión registrada');};
+}
+function editPoolSheet(){
+  openSheet(`<h2>Ajustar «para invertir»<button class="x" data-close>✕</button></h2>
+    <div class="field"><label class="fl">Saldo disponible para invertir</label><input class="txt mono" id="poolIn" type="number" inputmode="decimal" value="${S.investPool||0}"></div>
+    <div class="hint">Ajusta a mano cuánta plata tenés juntada para invertir (útil si venís con un saldo previo).</div>
+    <button class="save" id="ps">Guardar</button>`);
+  document.getElementById('ps').onclick=()=>{S.investPool=parseFloat(document.getElementById('poolIn').value||0);save();closeSheet();render();toast('Saldo actualizado');};
+}
 function debtSheet(d){
   const e=d||{desc:'',amount:'',months:'',who:''};
   openSheet(`<h2>${d?'Editar deuda':'Me deben'}<button class="x" data-close>✕</button></h2>
@@ -786,6 +826,44 @@ function catSheet(kind){
       S.cats[kind]=S.cats[kind].filter(x=>x&&x!=='—');save();closeSheet();render();toast('Categorías guardadas');};
   };wire();
 }
+let bulkState=[], bulkDate='';
+function bulkFixedSheet(){
+  const lastAmt=cat=>{const p=S.tx.filter(t=>t.bucket==='gf'&&t.cat===cat).sort((a,b)=>b.date.localeCompare(a.date));return p[0]?p[0].amount:'';};
+  const logged=cat=>txMonth(curMonth).some(t=>t.bucket==='gf'&&t.cat===cat);
+  bulkState=S.cats.gf.map(c=>{const a=lastAmt(c),al=logged(c);return {cat:c,amount:a===''?'':a,on:!al&&a!=='',already:al};});
+  bulkDate=`2026-${String(curMonth+1).padStart(2,'0')}-01`;
+  drawBulk();
+}
+function syncBulk(){document.querySelectorAll('[data-bulkamt]').forEach(el=>{bulkState[+el.dataset.bulkamt].amount=el.value;});}
+function drawBulk(){
+  const st=bulkState, chosen=st.filter(r=>r.on), total=chosen.reduce((a,r)=>a+(parseFloat(r.amount)||0),0);
+  openSheet(`
+    <h2>Cargar fijos · ${MONTHS_ES[curMonth]}<button class="x" data-close>✕</button></h2>
+    <div class="field"><label class="fl">Fecha para todos</label><input class="date mono" id="bulkDate" type="date" value="${bulkDate}"></div>
+    <div class="hint" style="margin:0 0 10px">Precargado con el último monto de cada gasto. Desmarca los que aún no te llegaron y ajusta lo que cambió.</div>
+    <div id="bulkList">${st.map((r,i)=>`
+      <div class="brow ${r.on?'':'off'}">
+        <div class="sw ${r.on?'on':''}" data-bulktog="${i}"><i></i></div>
+        <div class="bcat">${r.cat}${r.already?'<small>ya cargado este mes</small>':''}</div>
+        <div class="bamt"><span>${cur()}</span><input type="number" inputmode="decimal" data-bulkamt="${i}" value="${r.amount}" placeholder="0"></div>
+      </div>`).join('')}</div>
+    <div class="subttl" style="margin-top:12px"><span>Seleccionados: ${chosen.length}</span><span>Total: <b>${money(total)}</b></span></div>
+    <button class="save" id="bulkSave">Agregar ${chosen.length} gasto${chosen.length===1?'':'s'}</button>
+  `);
+  document.getElementById('bulkDate').onchange=e=>{bulkDate=e.target.value;};
+  document.querySelectorAll('[data-bulktog]').forEach(el=>el.onclick=()=>{syncBulk();const i=+el.dataset.bulktog;bulkState[i].on=!bulkState[i].on;drawBulk();});
+  document.querySelectorAll('[data-bulkamt]').forEach(el=>el.oninput=()=>{bulkState[+el.dataset.bulkamt].amount=el.value;});
+  document.getElementById('bulkSave').onclick=commitBulk;
+}
+function commitBulk(){
+  syncBulk();
+  const date=document.getElementById('bulkDate').value||`2026-${String(curMonth+1).padStart(2,'0')}-01`;
+  let n=0;
+  bulkState.forEach(r=>{const amt=parseFloat(r.amount)||0;if(r.on&&amt>0){S.tx.push({id:uid(),type:'expense',bucket:'gf',cat:r.cat,amount:amt,total:amt,shared:false,date,note:''});n++;}});
+  if(!n){toast('Marca al menos un gasto');return;}
+  save();closeSheet();render();toast(`${n} gasto${n===1?'':'s'} fijo${n===1?'':'s'} agregado${n===1?'':'s'}`);
+}
+
 let mfBucket='all', mfCat='all';
 function allMonthSheet(fresh){
   if(fresh!==false){mfBucket='all';mfCat='all';}
@@ -815,7 +893,7 @@ function drawMonthList(){
     <div class="chips" id="mfChips">
       ${BF.map(([k,l])=>`<button data-mfb="${k}" class="${mfBucket===k?'on':''}">${l}</button>`).join('')}
     </div>
-    ${cats.length?`<div class="field" style="margin-bottom:10px"><select id="mfCat">
+    ${(mfBucket!=='gf'&&cats.length)?`<div class="field" style="margin-bottom:10px"><select id="mfCat">
       <option value="all">Todas las categorías (${cats.length})</option>
       ${cats.map(c=>`<option value="${c.replace(/"/g,'&quot;')}" ${mfCat===c?'selected':''}>${c}</option>`).join('')}
     </select></div>`:''}
@@ -841,50 +919,31 @@ function yearSheet(){
   // per-month aggregates
   const M=[...Array(12)].map((_,m)=>{
     const inc=incomeOf(m);
-    const gf=spentOf('gf',m), gv=spentOf('gv',m), aho=spentOf('aho',m), inv=spentOf('inv',m);
-    return {m,inc,gf,gv,aho,inv,
-      rGf:inc*S.alloc.gf-gf, rGv:inc*S.alloc.gv-gv, rAho:inc*S.alloc.aho-aho, rInv:inc*S.alloc.inv-inv,
-      spent:gf+gv, saved:aho+inv};
+    const gf=spentOf('gf',m), gv=spentOf('gv',m);
+    const svTx=txMonth(m).filter(t=>t.bucket==='aho'), ivTx=txMonth(m).filter(t=>t.bucket==='inv');
+    const ahoIn=svTx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
+    const ahoOut=svTx.filter(t=>t.amount<0).reduce((a,t)=>a-t.amount,0);
+    const invIn=ivTx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
+    const invOut=ivTx.filter(t=>t.kind==='deploy').reduce((a,t)=>a+t.amount,0);
+    return {m,inc,gf,gv,ahoIn,ahoOut,invIn,invOut,spent:gf+gv,saved:(ahoIn-ahoOut)+invIn};
   });
   const T=M.reduce((a,x)=>({inc:a.inc+x.inc,spent:a.spent+x.spent,saved:a.saved+x.saved,
-    rGf:a.rGf+x.rGf,rGv:a.rGv+x.rGv,rAho:a.rAho+x.rAho,rInv:a.rInv+x.rInv}),
-    {inc:0,spent:0,saved:0,rGf:0,rGv:0,rAho:0,rInv:0});
-
-  // chart: income (outline) vs spent (filled) per month
-  const W=414,H=132,pad=6,gap=4;
-  const colW=(W-pad*2)/12;
-  const maxV=Math.max(1,...M.map(x=>Math.max(x.inc,x.spent)));
-  const barW=(colW-gap)/2-1;
-  let bars='';
-  M.forEach((x,i)=>{
-    const x0=pad+i*colW;
-    const ih=(x.inc/maxV)*(H-22), sh=(x.spent/maxV)*(H-22);
-    const now=i===curMonth?' opacity="1"':'';
-    bars+=`<rect x="${x0+1}" y="${H-18-ih}" width="${barW}" height="${ih}" rx="2" fill="#34445F"${now}/>`;
-    bars+=`<rect x="${x0+1+barW+2}" y="${H-18-sh}" width="${barW}" height="${sh}" rx="2" fill="#B7CE24"/>`;
-    bars+=`<text x="${x0+colW/2}" y="${H-5}" text-anchor="middle" font-family="'Spline Sans Mono',monospace" font-size="8" fill="#88816B">${MONTHS_ES[i][0]}</text>`;
-    if(i===curMonth)bars+=`<rect x="${x0}" y="0" width="${colW}" height="${H-14}" fill="#B7CE24" opacity="0.08" rx="3"/>`;
-  });
-  const chart=`<svg class="ychart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
-
-  const cell=v=>`<td class="${v===0?'z':(v<0?'neg':'pos')}">${moneyK(v)}</td>`;
-  const rows=M.map(x=>{
-    const empty=x.inc===0&&x.spent===0&&x.saved===0;
-    return `<tr class="${x.m===curMonth?'now ':''}ytap" data-gomonth="${x.m}">
-      <td class="mth">${MONTHS_ES[x.m]}</td>
-      <td>${x.inc===0?'<span class="z">·</span>':moneyK(x.inc)}</td>
-      ${cell(x.rGf)}${cell(x.rGv)}${cell(x.rAho)}${cell(x.rInv)}
-    </tr>`;
-  }).join('');
-  const totRow=`<tr class="tot">
-    <td class="mth">Año</td><td>${moneyK(T.inc)}</td>
-    <td class="${T.rGf<0?'neg':'pos'}">${moneyK(T.rGf)}</td>
-    <td class="${T.rGv<0?'neg':'pos'}">${moneyK(T.rGv)}</td>
-    <td class="${T.rAho<0?'neg':'pos'}">${moneyK(T.rAho)}</td>
-    <td class="${T.rInv<0?'neg':'pos'}">${moneyK(T.rInv)}</td></tr>`;
+    gf:a.gf+x.gf,gv:a.gv+x.gv,ahoIn:a.ahoIn+x.ahoIn,ahoOut:a.ahoOut+x.ahoOut,invIn:a.invIn+x.invIn,invOut:a.invOut+x.invOut}),
+    {inc:0,spent:0,saved:0,gf:0,gv:0,ahoIn:0,ahoOut:0,invIn:0,invOut:0});
 
   const savTotal=S.savings.reduce((a,g)=>a+g.balance,0);
   const invTotal=S.investments.reduce((a,i)=>a+i.value,0);
+
+  // ingresos + egresos por bolsa (GF, GV egresos; AHO, INV entrada y salida)
+  const fc=(v,cls)=>`<td class="${v===0?'z':cls}">${moneyK(v)}</td>`;
+  const eRows=M.map(x=>`<tr class="${x.m===curMonth?'now ':''}ytap" data-gomonth="${x.m}">
+      <td class="mth">${MONTHS_ES[x.m]}</td>
+      ${fc(x.inc,'pos')}${fc(x.gf,'')}${fc(x.gv,'')}${fc(x.ahoIn,'pos')}${fc(x.ahoOut,'neg')}${fc(x.invIn,'pos')}${fc(x.invOut,'neg')}
+    </tr>`).join('');
+  const eTot=`<tr class="tot"><td class="mth">Año</td>
+    <td class="pos">${moneyK(T.inc)}</td><td>${moneyK(T.gf)}</td><td>${moneyK(T.gv)}</td>
+    <td class="pos">${moneyK(T.ahoIn)}</td><td class="neg">${moneyK(T.ahoOut)}</td>
+    <td class="pos">${moneyK(T.invIn)}</td><td class="neg">${moneyK(T.invOut)}</td></tr>`;
 
   openSheet(`
     <h2>Resumen 2026<button class="x" data-close>✕</button></h2>
@@ -894,17 +953,14 @@ function yearSheet(){
       <div class="ytile"><div class="l">Guardado</div><div class="v">${money(T.saved)}</div></div>
     </div>
     <div class="card">
-      <div class="eyebrow" style="margin:0 0 8px">Ingreso vs gasto por mes</div>
-      ${chart}
-      <div class="ylegend"><span><i style="background:#34445F"></i>Ingreso</span><span><i style="background:#B7CE24"></i>Gasto (fijo+var)</span></div>
-    </div>
-    <div class="card">
-      <div class="eyebrow" style="margin:0 0 8px">Sobrante por bolsa · Resta</div>
+      <div class="eyebrow" style="margin:0 0 8px">Ingresos y egresos por bolsa · mes a mes</div>
+      <div style="overflow-x:auto">
       <table class="ytable">
-        <thead><tr><th>Mes</th><th>Ingr</th><th>GF</th><th>GV</th><th>Aho</th><th>Inv</th></tr></thead>
-        <tbody>${rows}${totRow}</tbody>
+        <thead><tr><th>Mes</th><th>Ingr</th><th>GF</th><th>GV</th><th>Aho+</th><th>Aho−</th><th>Inv+</th><th>Inv−</th></tr></thead>
+        <tbody>${eRows}${eTot}</tbody>
       </table>
-      <div class="hint">Sobrante = asignado (ingreso × %) − gastado/aportado ese mes. Verde = te sobró, rojo = te pasaste. Valores en miles con «k». Toca un mes para abrirlo.</div>
+      </div>
+      <div class="hint"><b>Ingr</b> = ingreso del mes. <b>GF / GV</b> = egresos (gastos). <b>Ahorros</b>: <span class="pos">+</span> aportes, <span class="neg">−</span> usos. <b>Inversiones</b>: <span class="pos">+</span> apartado para invertir, <span class="neg">−</span> invertido en índices. Valores en miles con «k». Toca un mes para abrirlo.</div>
     </div>
     <div class="ytiles" style="grid-template-columns:1fr 1fr">
       <div class="ytile"><div class="l">Ahorros hoy</div><div class="v">${money(savTotal)}</div></div>
@@ -957,8 +1013,12 @@ document.body.addEventListener('click',e=>{
 });
 document.getElementById('yearBtn').onclick=yearSheet;
 document.getElementById('curM').onclick=yearSheet;
+document.getElementById('bulkBtn').onclick=bulkFixedSheet;
 document.getElementById('addGoal').onclick=()=>goalSheet(null);
 document.getElementById('addIndex').onclick=()=>indexSheet(null);
+document.getElementById('poolAdd').onclick=poolAddSheet;
+document.getElementById('deployBtn').onclick=deploySheet;
+document.getElementById('poolHero').onclick=editPoolSheet;
 document.getElementById('addIncome').onclick=()=>quickAdd('income');
 document.getElementById('addDebt').onclick=()=>debtSheet(null);
 document.getElementById('expJson').onclick=exportJson;
@@ -968,7 +1028,6 @@ document.getElementById('fileIn').onchange=e=>{if(e.target.files[0])importJson(e
 
 // settings live
 document.getElementById('setCur').onchange=e=>{S.settings.currency=e.target.value.trim()||'₪';save();render();};
-document.getElementById('setPartner').onchange=e=>{S.settings.partner=e.target.value.trim()||'Pareja';save();render();};
 document.getElementById('setRemind').onclick=async()=>{
   if(!S.settings.remind){ if('Notification'in window){try{const p=await Notification.requestPermission();}catch(e){}} }
   S.settings.remind=!S.settings.remind;save();render();
