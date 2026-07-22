@@ -501,7 +501,7 @@ function renderInicio(){
   });
 
   // nudge — days since last expense entry
-  const exp=S.tx.filter(t=>t.type==='expense'&&t.note!=='Import 2026').sort((a,b)=>b.date.localeCompare(a.date));
+  const exp=S.tx.filter(t=>t.type==='expense'&&!/^Import/.test(t.note||'')).sort((a,b)=>b.date.localeCompare(a.date));
   const slot=document.getElementById('nudgeSlot');
   const today=new Date();
   let days=null;
@@ -540,17 +540,18 @@ function renderInicio(){
 function rowHtml(t){
   const isInc=t.type==='income';
   const col=isInc?'var(--ok)':(BUCKETS[t.bucket]?BUCKETS[t.bucket].hex:'#888');
-  const title=(t.note&&t.note!=='Import 2026')?t.note:t.cat;
-  const init=(title||'?').replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9]/g,'').slice(0,2).toUpperCase();
+  const title=(t.note&&!/^Import/.test(t.note))?t.note:t.cat;
+  const init={income:'ING',gf:'GF',gv:'GV',aho:'AH',inv:'INV'}[t.bucket]||'·';
   const d=t.date.slice(8,10)+' '+MONTHS_ES[+t.date.slice(5,7)-1];
   let extra='';
   if(t.bucket!=='gf') extra+=`<span>·</span><span>${t.cat}</span>`;
   if(t.goal){const g=S.savings.find(x=>x.id===t.goal)||S.investments.find(x=>x.id===t.goal);if(g&&g.name!==t.cat)extra+=`<span class="pill">${g.name}</span>`;}
+  const positive = t.type==='income' || (t.type==='saving'&&t.amount>0) || (t.type==='invest'&&t.kind==='pool');
   return `<div class="row" data-tx="${t.id}">
     <div class="chip" style="background:${col}">${init}</div>
     <div class="info"><div class="t1">${title}</div>
       <div class="t2"><span>${d}</span>${extra}</div></div>
-    <div class="amt ${isInc?'pos':''}">${isInc?'+':'−'}${money(t.amount).replace(cur(),cur())}</div>
+    <div class="amt ${positive?'pos':''}">${positive?'+':'−'}${money(Math.abs(t.amount))}</div>
   </div>`;
 }
 
@@ -617,7 +618,7 @@ function renderMas(){
   const totalDebt=S.debts.reduce((a,d)=>a+(d.amount||0),0);
   dl.innerHTML=(S.debts.length?S.debts.map(d=>`
     <div class="row debtrow" data-debt="${d.id}">
-      <div class="chip" style="background:var(--indigo)">${(d.who||'?').slice(0,2).toUpperCase()}</div>
+      <div class="chip" style="background:var(--indigo)">DE</div>
       <div class="info"><div class="t1">${d.desc}</div><div class="t2"><span>${d.who||'—'}</span>${d.months?`<span>·</span><span>${d.months} cuotas</span>`:''}</div></div>
       <div class="amt pos">${money(d.amount)}</div></div>`).join('')
     :`<div class="empty">Nadie te debe (por ahora).</div>`)+
@@ -677,7 +678,7 @@ function drawAddSheet(){
          <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
 
     <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
-    ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&st.note!=='Import 2026'?st.note:''}"></div>`:''}
+    ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&!/^Import/.test(st.note)?st.note:''}"></div>`:''}
 
     <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
     ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
@@ -1066,7 +1067,7 @@ function reminderTick(){
   if(!S.settings.remind||!('Notification'in window)||Notification.permission!=='granted')return;
   const last=DB.get('lastRemind');const today=new Date().toISOString().slice(0,10);
   if(last===today)return;
-  const exp=S.tx.filter(t=>t.type==='expense'&&t.note!=='Import 2026').sort((a,b)=>b.date.localeCompare(a.date));
+  const exp=S.tx.filter(t=>t.type==='expense'&&!/^Import/.test(t.note||'')).sort((a,b)=>b.date.localeCompare(a.date));
   const days=exp[0]?Math.floor((Date.now()-new Date(exp[0].date))/86400000):99;
   if(new Date().getHours()>=21 && days>=1){
     try{new Notification('Cuentas',{body:`Llevas ${days} día(s) sin registrar. Anota tus gastos de hoy.`});DB.set('lastRemind',today);}catch(e){}
