@@ -220,6 +220,12 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
 .ytable tr.tot td{border-top:2px solid var(--ink);border-bottom:none;font-weight:700;padding-top:8px}
 .ytable td.z{color:var(--line)}
 .ytap{cursor:pointer}
+.ynav{display:inline-flex;align-items:center;gap:8px}
+.ystep{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;font-size:16px;color:var(--ink);line-height:1;background:var(--card)}
+.ystep:active{background:var(--card-2)}
+.avail{display:flex;justify-content:space-between;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:14px}
+.avail span{font-size:12.5px;font-weight:600}
+.avail b{font-family:var(--mono);font-weight:700;font-size:15px}
 /* month list filters */
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px}
 .chips::-webkit-scrollbar{display:none}
@@ -245,7 +251,7 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
 
 <header>
   <div class="brand">
-    <h1>CUENTAS<span>·</span>26</h1>
+    <h1 style="text-transform:none;letter-spacing:.01em;font-size:17px">Cuentas</h1>
     <div class="monthnav">
       <button id="prevM">‹</button>
       <div class="m mono" id="curM">JUL 26</div>
@@ -269,7 +275,7 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
 
     <div id="nudgeSlot"></div>
 
-    <button class="linkbtn" id="yearBtn" style="margin:-2px 0 14px;background:var(--ink);color:var(--paper);border:1.5px solid #000;border-style:solid">Resumen del año 2026  →</button>
+    <button class="linkbtn" id="yearBtn" style="margin:-2px 0 14px;background:var(--ink);color:var(--paper);border:1.5px solid #000;border-style:solid">Resumen del año  →</button>
 
     <div class="eyebrow">Presupuesto por bolsa</div>
     <div class="buckets" id="buckets"></div>
@@ -300,10 +306,11 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
       <div class="big mono" id="invPool">₪0</div>
       <div class="sub" id="invSub">Portafolio invertido: ₪0 · toca para ajustar</div>
     </div>
-    <div class="gbtns" style="margin:-2px 0 16px">
+    <div class="gbtns" style="margin:-2px 0 12px">
       <button class="add" id="poolAdd">+ Agregar para invertir</button>
       <button class="use" id="deployBtn">Invertir</button>
     </div>
+    <div class="avail"><span>Disponible para aportar este mes</span><b class="mono" id="invAvail">₪0</b></div>
     <div class="card">
       <div class="eyebrow" style="margin:0 0 10px">Rebalanceo</div>
       <table class="rebal"><thead><tr><th>Índice</th><th>Actual</th><th>Meta</th><th>Comprar</th></tr></thead>
@@ -349,7 +356,6 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
       <input type="file" id="fileIn" accept="application/json" style="display:none">
       <div class="hint">Tus datos viven solo en este teléfono. Haz una copia de vez en cuando; si borras el historial de Safari o la app, se pierden.</div>
     </div>
-    <div class="hint" style="text-align:center;padding:10px 0">Hecho a partir de tu Excel 2026 · Ene–Jul precargados</div>
   </section>
 </main>
 
@@ -447,20 +453,20 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 /* ---------- helpers ---------- */
 const BUCKETS={gf:{name:'Gastos fijos',color:'var(--gf)',hex:'#3A372E'},gv:{name:'Gastos variables',color:'var(--gv)',hex:'#9FB61f'},
   aho:{name:'Ahorros',color:'var(--aho)',hex:'#34445F'},inv:{name:'Inversiones',color:'var(--inv)',hex:'#3E6B66'}};
-let curMonth=6; // 0..11 (Jul default)
+let curMonth=6, curYear=2026; // active month (0..11) and year
 const cur=()=>S.settings.currency;
 function money(n,sign){
   const v=Math.round((n||0)*100)/100;
   const s=v.toLocaleString('es',{minimumFractionDigits:0,maximumFractionDigits:2});
   return (sign&&v>0?'+':'')+cur()+s;
 }
-const mkey=m=>`2026-${String(m+1).padStart(2,'0')}`;
-const inMonth=(d,m)=>d&&d.slice(0,7)===mkey(m);
-const txMonth=m=>S.tx.filter(t=>inMonth(t.date,m));
-function incomeOf(m){return txMonth(m).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);}
-function spentOf(b,m){return txMonth(m).filter(t=>t.bucket===b&&(t.type==='expense'||t.type==='saving'||t.type==='invest')).reduce((a,t)=>a+t.amount,0);}
-function budgetUsed(b,m){
-  const tx=txMonth(m).filter(t=>t.bucket===b);
+const mkey=(m,y)=>`${y??curYear}-${String(m+1).padStart(2,'0')}`;
+const inMonth=(d,m,y)=>d&&d.slice(0,7)===mkey(m,y);
+const txMonth=(m,y)=>S.tx.filter(t=>inMonth(t.date,m,y));
+function incomeOf(m,y){return txMonth(m,y).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);}
+function spentOf(b,m,y){return txMonth(m,y).filter(t=>t.bucket===b&&(t.type==='expense'||t.type==='saving'||t.type==='invest')).reduce((a,t)=>a+t.amount,0);}
+function budgetUsed(b,m,y){
+  const tx=txMonth(m,y).filter(t=>t.bucket===b);
   if(b==='aho') return tx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
   if(b==='inv') return tx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
   return tx.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
@@ -469,7 +475,7 @@ function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t
 
 /* ---------- render root ---------- */
 function render(){
-  document.getElementById('curM').textContent=`${MONTHS_ES[curMonth].toUpperCase()} 26`;
+  document.getElementById('curM').textContent=`${MONTHS_ES[curMonth].toUpperCase()} ${String(curYear).slice(2)}`;
   renderInicio(); renderAhorros(); renderInv(); renderMas();
 }
 
@@ -553,18 +559,27 @@ function renderAhorros(){
   const total=S.savings.reduce((a,g)=>a+g.balance,0);
   document.getElementById('savTotal').textContent=money(total);
   const inc=incomeOf(curMonth), alloc=inc*S.alloc.aho;
-  document.getElementById('savSub').textContent=`Este mes se destina ${money(alloc)} · repartido entre ${S.savings.length} metas`;
+  const aportadoMesTotal=txMonth(curMonth).filter(t=>t.bucket==='aho'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
+  const disponible=Math.max(0,alloc-aportadoMesTotal);
+  document.getElementById('savSub').textContent=`Disponible para aportar: ${money(disponible)}`;
   const list=document.getElementById('goalsList');list.innerHTML='';
   S.savings.forEach(g=>{
     const prog=g.target?Math.min(g.balance/g.target*100,100):null;
     const monthShare=alloc*(g.pct||0);
     const usedApp=S.tx.filter(t=>t.goal===g.id&&t.amount<0).reduce((a,t)=>a-t.amount,0);
     const totalUsed=(g.usedBefore||0)+usedApp;
+    const aportadoMes=txMonth(curMonth).filter(t=>t.goal===g.id&&t.amount>0).reduce((a,t)=>a+t.amount,0);
+    const falta=monthShare-aportadoMes;
+    const done=monthShare>0&&falta<=0.5;
+    const status=monthShare>0
+      ? `Aportado ${money(aportadoMes)} de ${money(monthShare)}${falta>0.5?` · faltan ${money(falta)}`:' · ✓ completo'}`
+      : '';
     const card=document.createElement('div');card.className='card goal';
     card.innerHTML=`
-      <div class="top"><span class="gn">${g.name}</span><span class="gp">${Math.round((g.pct||0)*100)}% · ${money(monthShare)}/mes</span></div>
+      <div class="top"><span class="gn">${g.name}</span><span class="gp">${Math.round((g.pct||0)*100)}% · ${money(monthShare)}</span></div>
       <div class="bal">${money(g.balance)}</div>
       <div class="obj">${g.target?`meta ${money(g.target)} · ${prog.toFixed(0)}%`:'sin meta fijada'}${totalUsed>0?` · utilizado ${money(totalUsed)}`:''}</div>
+      ${status?`<div class="obj"${done?' style="color:var(--ok)"':''}>${status}</div>`:''}
       ${g.target?`<div class="track" style="margin-top:9px"><div class="fill" style="width:${prog}%;background:var(--aho)"></div></div>`:''}
       <div class="gbtns"><button class="add" data-goaladd="${g.id}">+ Aportar</button><button class="use" data-goaluse="${g.id}">Usar</button><button class="use" data-goaledit="${g.id}" style="flex:.5">⚙</button></div>`;
     list.appendChild(card);
@@ -577,6 +592,9 @@ function renderInv(){
   const total=S.investments.reduce((a,i)=>a+i.value,0);
   document.getElementById('invPool').textContent=money(pool);
   document.getElementById('invSub').textContent=`Portafolio invertido: ${money(total)} · toca para ajustar`;
+  const inc=incomeOf(curMonth), alloc=inc*S.alloc.inv;
+  const aportadoMes=budgetUsed('inv',curMonth);
+  document.getElementById('invAvail').textContent=money(Math.max(0,alloc-aportadoMes));
   const tgt=S.investments.reduce((a,i)=>a+i.target,0)||1;
   const body=document.getElementById('rebalBody');body.innerHTML='';
   S.investments.forEach(i=>{
@@ -600,7 +618,7 @@ function renderMas(){
   dl.innerHTML=(S.debts.length?S.debts.map(d=>`
     <div class="row debtrow" data-debt="${d.id}">
       <div class="chip" style="background:var(--indigo)">${(d.who||'?').slice(0,2).toUpperCase()}</div>
-      <div class="info"><div class="t1">${d.desc}</div><div class="t2"><span>${d.who||'—'}</span>${d.months?`<span>${d.months} cuotas</span>`:''}</div></div>
+      <div class="info"><div class="t1">${d.desc}</div><div class="t2"><span>${d.who||'—'}</span>${d.months?`<span>·</span><span>${d.months} cuotas</span>`:''}</div></div>
       <div class="amt pos">${money(d.amount)}</div></div>`).join('')
     :`<div class="empty">Nadie te debe (por ahora).</div>`)+
     (S.debts.length?`<div class="row" style="border-top:2px solid var(--ink)"><div class="info"><div class="t1">Total por cobrar</div></div><div class="amt pos">${money(totalDebt)}</div></div>`:'');
@@ -641,7 +659,7 @@ function drawAddSheet(){
   const catList = st.type==='income'?S.cats.income : st.type==='expense'?S.cats[st.bucket]
     : st.type==='saving'?S.savings.map(g=>g.name):[];
   const goalSelect = (st.type==='saving');
-  const today=new Date();const dstr=`2026-${String(curMonth+1).padStart(2,'0')}-${String(Math.min(today.getDate(),28)).padStart(2,'0')}`;
+  const today=new Date();const dstr=`${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(Math.min(today.getDate(),28)).padStart(2,'0')}`;
 
   openSheet(`
     <h2>${st.editId?'Editar':'Registrar'}<button class="x" data-close>✕</button></h2>
@@ -679,7 +697,7 @@ function commitAdd(){
   let amt=parseFloat(document.getElementById('amtIn').value||0);
   const catEl=document.getElementById('catIn');
   const cat=st.type==='invest'?'Para invertir':(catEl?catEl.value:'');
-  const date=document.getElementById('dateIn').value||`2026-${String(curMonth+1).padStart(2,'0')}-15`;
+  const date=document.getElementById('dateIn').value||`${curYear}-${String(curMonth+1).padStart(2,'0')}-15`;
   const note=(document.getElementById('noteIn')?.value||'').trim();
   let total=amt, shared=false;
   if(!amt||amt<=0){toast('Escribe un monto');return;}
@@ -731,7 +749,7 @@ function goalMove(id,dir){ // dir 'add' or 'use'
   openSheet(`<h2>${dir==='add'?'Aportar a':'Usar de'} ${g.name}<button class="x" data-close>✕</button></h2>
     <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" autofocus></div>
     <div class="field"><label class="fl">Nota</label><input class="txt mono" id="noteIn" placeholder="${dir==='use'?'ej. arreglo tocadiscos':'aporte mensual'}"></div>
-    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="2026-${String(curMonth+1).padStart(2,'0')}-15"></div>
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${curYear}-${String(curMonth+1).padStart(2,'0')}-15"></div>
     <button class="save" id="gm">${dir==='add'?'Aportar':'Registrar uso'}</button>`);
   document.getElementById('gm').onclick=()=>{
     let amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
@@ -758,7 +776,7 @@ function indexSheet(i){
 function poolAddSheet(){
   openSheet(`<h2>Agregar para invertir<button class="x" data-close>✕</button></h2>
     <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" autofocus></div>
-    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="2026-${String(curMonth+1).padStart(2,'0')}-15"></div>
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${curYear}-${String(curMonth+1).padStart(2,'0')}-15"></div>
     <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="noteIn" placeholder="aparte del mes para invertir"></div>
     <button class="save" id="pa">Agregar al saldo</button>`);
   document.getElementById('pa').onclick=()=>{
@@ -775,7 +793,7 @@ function deploySheet(){
     <div class="hint" style="margin:0 0 10px">Disponible para invertir: <b>${money(pool)}</b></div>
     <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" autofocus></div>
     <div class="field"><label class="fl">¿En qué índice?</label><select id="ixIn">${S.investments.map(i=>`<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
-    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="2026-${String(curMonth+1).padStart(2,'0')}-15"></div>
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${curYear}-${String(curMonth+1).padStart(2,'0')}-15"></div>
     <button class="save" id="dp">Invertir</button>`);
   document.getElementById('dp').onclick=()=>{
     const amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
@@ -831,7 +849,7 @@ function bulkFixedSheet(){
   const lastAmt=cat=>{const p=S.tx.filter(t=>t.bucket==='gf'&&t.cat===cat).sort((a,b)=>b.date.localeCompare(a.date));return p[0]?p[0].amount:'';};
   const logged=cat=>txMonth(curMonth).some(t=>t.bucket==='gf'&&t.cat===cat);
   bulkState=S.cats.gf.map(c=>{const a=lastAmt(c),al=logged(c);return {cat:c,amount:a===''?'':a,on:!al&&a!=='',already:al};});
-  bulkDate=`2026-${String(curMonth+1).padStart(2,'0')}-01`;
+  bulkDate=`${curYear}-${String(curMonth+1).padStart(2,'0')}-01`;
   drawBulk();
 }
 function syncBulk(){document.querySelectorAll('[data-bulkamt]').forEach(el=>{bulkState[+el.dataset.bulkamt].amount=el.value;});}
@@ -857,7 +875,7 @@ function drawBulk(){
 }
 function commitBulk(){
   syncBulk();
-  const date=document.getElementById('bulkDate').value||`2026-${String(curMonth+1).padStart(2,'0')}-01`;
+  const date=document.getElementById('bulkDate').value||`${curYear}-${String(curMonth+1).padStart(2,'0')}-01`;
   let n=0;
   bulkState.forEach(r=>{const amt=parseFloat(r.amount)||0;if(r.on&&amt>0){S.tx.push({id:uid(),type:'expense',bucket:'gf',cat:r.cat,amount:amt,total:amt,shared:false,date,note:''});n++;}});
   if(!n){toast('Marca al menos un gasto');return;}
@@ -889,7 +907,7 @@ function drawMonthList(){
   if(!sub) sub='<span>Sin movimientos</span>';
 
   openSheet(`
-    <h2>${MONTHS_ES[curMonth]} 2026<button class="x" data-close>✕</button></h2>
+    <h2>${MONTHS_ES[curMonth]} ${curYear}<button class="x" data-close>✕</button></h2>
     <div class="chips" id="mfChips">
       ${BF.map(([k,l])=>`<button data-mfb="${k}" class="${mfBucket===k?'on':''}">${l}</button>`).join('')}
     </div>
@@ -915,12 +933,15 @@ function moneyK(n){
   if(a>=1000)  return (v/1000).toFixed(1)+'k';
   return String(v);
 }
-function yearSheet(){
+let summaryYear=2026;
+function yearSheet(y){
+  summaryYear = (y==null?curYear:y);
+  const Y=summaryYear;
   // per-month aggregates
   const M=[...Array(12)].map((_,m)=>{
-    const inc=incomeOf(m);
-    const gf=spentOf('gf',m), gv=spentOf('gv',m);
-    const svTx=txMonth(m).filter(t=>t.bucket==='aho'), ivTx=txMonth(m).filter(t=>t.bucket==='inv');
+    const inc=incomeOf(m,Y);
+    const gf=spentOf('gf',m,Y), gv=spentOf('gv',m,Y);
+    const svTx=txMonth(m,Y).filter(t=>t.bucket==='aho'), ivTx=txMonth(m,Y).filter(t=>t.bucket==='inv');
     const ahoIn=svTx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
     const ahoOut=svTx.filter(t=>t.amount<0).reduce((a,t)=>a-t.amount,0);
     const invIn=ivTx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
@@ -936,7 +957,7 @@ function yearSheet(){
 
   // ingresos + egresos por bolsa (GF, GV egresos; AHO, INV entrada y salida)
   const fc=(v,cls)=>`<td class="${v===0?'z':cls}">${moneyK(v)}</td>`;
-  const eRows=M.map(x=>`<tr class="${x.m===curMonth?'now ':''}ytap" data-gomonth="${x.m}">
+  const eRows=M.map(x=>`<tr class="${(x.m===curMonth&&Y===curYear)?'now ':''}ytap" data-gomonth="${x.m}">
       <td class="mth">${MONTHS_ES[x.m]}</td>
       ${fc(x.inc,'pos')}${fc(x.gf,'')}${fc(x.gv,'')}${fc(x.ahoIn,'pos')}${fc(x.ahoOut,'neg')}${fc(x.invIn,'pos')}${fc(x.invOut,'neg')}
     </tr>`).join('');
@@ -946,7 +967,7 @@ function yearSheet(){
     <td class="pos">${moneyK(T.invIn)}</td><td class="neg">${moneyK(T.invOut)}</td></tr>`;
 
   openSheet(`
-    <h2>Resumen 2026<button class="x" data-close>✕</button></h2>
+    <h2><span class="ynav"><button class="ystep" data-yearnav="-1">‹</button> Resumen ${Y} <button class="ystep" data-yearnav="1">›</button></span><button class="x" data-close>✕</button></h2>
     <div class="ytiles">
       <div class="ytile"><div class="l">Ingresos año</div><div class="v">${money(T.inc)}</div></div>
       <div class="ytile"><div class="l">Gastado</div><div class="v">${money(T.spent)}</div></div>
@@ -992,8 +1013,8 @@ function go(v){
 }
 document.querySelectorAll('nav [data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 document.getElementById('fab').onclick=()=>quickAdd('expense');
-document.getElementById('prevM').onclick=()=>{if(curMonth>0){curMonth--;render();}};
-document.getElementById('nextM').onclick=()=>{if(curMonth<11){curMonth++;render();}};
+document.getElementById('prevM').onclick=()=>{if(curMonth>0)curMonth--;else{curMonth=11;curYear--;}render();};
+document.getElementById('nextM').onclick=()=>{if(curMonth<11)curMonth++;else{curMonth=0;curYear++;}render();};
 document.getElementById('scrim').onclick=closeSheet;
 
 // delegated clicks
@@ -1009,10 +1030,11 @@ document.body.addEventListener('click',e=>{
   const ie=t.closest('[data-invedit]'); if(ie)return indexSheet(S.investments.find(x=>x.id===ie.dataset.invedit));
   const de=t.closest('[data-debt]'); if(de)return debtSheet(S.debts.find(x=>x.id===de.dataset.debt));
   const ec=t.closest('[data-editcat]'); if(ec)return catSheet(ec.dataset.editcat);
-  const gm=t.closest('[data-gomonth]'); if(gm){curMonth=+gm.dataset.gomonth;closeSheet();render();go('inicio');return;}
+  const yn=t.closest('[data-yearnav]'); if(yn){yearSheet(summaryYear+(+yn.dataset.yearnav));return;}
+  const gm=t.closest('[data-gomonth]'); if(gm){curYear=summaryYear;curMonth=+gm.dataset.gomonth;closeSheet();render();go('inicio');return;}
 });
-document.getElementById('yearBtn').onclick=yearSheet;
-document.getElementById('curM').onclick=yearSheet;
+document.getElementById('yearBtn').onclick=()=>yearSheet();
+document.getElementById('curM').onclick=()=>yearSheet();
 document.getElementById('bulkBtn').onclick=bulkFixedSheet;
 document.getElementById('addGoal').onclick=()=>goalSheet(null);
 document.getElementById('addIndex').onclick=()=>indexSheet(null);
@@ -1055,7 +1077,11 @@ setInterval(reminderTick,60000);
 /* ---------- boot ---------- */
 load();
 // default month = latest month with any activity, else current
-(function(){for(let m=11;m>=0;m--){if(txMonth(m).length){curMonth=m;break;}}})();
+(function(){
+  let ld=null; S.tx.forEach(t=>{if(t.date&&(!ld||t.date>ld))ld=t.date;});
+  if(ld){curYear=+ld.slice(0,4);curMonth=+ld.slice(5,7)-1;}
+  else{const n=new Date();curYear=n.getFullYear();curMonth=n.getMonth();}
+})();
 render();
 setTimeout(reminderTick,3000);
 
