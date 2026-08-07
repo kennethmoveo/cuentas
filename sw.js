@@ -1,6 +1,6 @@
 /* Cuentas service worker — offline shell + runtime cache.
    Bump CACHE when you change index.html or icons to force an update. */
-const CACHE = 'cuentas-v15';
+const CACHE = 'cuentas-v17';
 const ASSETS = [
   './',
   './index.html',

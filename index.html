@@ -428,6 +428,7 @@ function freshState(){
   return {
     settings:{currency:'₪',partner:'Pareja',remind:false},
     alloc:{gf:.275,gv:.30,aho:.30,inv:.125},
+    allocHistory:[{from:'2023-01',alloc:{gf:.275,gv:.30,aho:.30,inv:.125}}],
     cats:JSON.parse(JSON.stringify(CAT)),
     savings:SEED_SAVINGS.map(g=>({id:uid(),...g})),
     investments:SEED_INV.map(i=>({id:uid(),...i})),
@@ -445,7 +446,18 @@ function load(){
 function migrate(){
   if(S.investPool===undefined)S.investPool=0;
   if(Array.isArray(S.savings))S.savings.forEach(g=>{if(g.usedBefore===undefined){const sd=SEED_SAVINGS.find(x=>x.name===g.name);g.usedBefore=sd?sd.usedBefore:0;}});
+  if(!Array.isArray(S.allocHistory)||!S.allocHistory.length){
+    S.allocHistory=[{from:'2023-01',alloc:{...S.alloc}}];
+  }
   save();
+}
+// alloc active on a given YYYY-MM key (falls back to first entry / current)
+function allocFor(mkeyStr){
+  const h=(S.allocHistory||[]).slice().sort((a,b)=>a.from.localeCompare(b.from));
+  if(!h.length) return S.alloc;
+  let a=h[0].alloc;
+  for(const e of h){ if(e.from<=mkeyStr) a=e.alloc; else break; }
+  return a;
 }
 function save(){ DB.set('cuentas_v1',JSON.stringify(S)); }
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -468,7 +480,7 @@ function spentOf(b,m,y){return txMonth(m,y).filter(t=>t.bucket===b&&(t.type==='e
 function budgetUsed(b,m,y){
   const tx=txMonth(m,y).filter(t=>t.bucket===b);
   if(b==='aho') return tx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
-  if(b==='inv') return tx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
+  if(b==='inv') return tx.filter(t=>t.kind==='pool'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
   return tx.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1900);}
@@ -489,8 +501,9 @@ function renderInicio(){
   // seam bar
   const bar=document.getElementById('seamBar'), leg=document.getElementById('seamLegend');
   bar.innerHTML='';leg.innerHTML='';
+  const curAlloc=allocFor(mkey(curMonth,curYear));
   ['gf','gv','aho','inv'].forEach(b=>{
-    const p=S.alloc[b], amt=inc*p;
+    const p=curAlloc[b], amt=inc*p;
     const seg=document.createElement('div');seg.className='seg';
     seg.style.flex=p; seg.style.background=BUCKETS[b].hex;
     seg.innerHTML=`<b>${Math.round(p*100)}%</b>`;
@@ -516,7 +529,7 @@ function renderInicio(){
   const inc0=inc||0;
   const wrap=document.getElementById('buckets');wrap.innerHTML='';
   ['gf','gv','aho','inv'].forEach(b=>{
-    const alloc=inc0*S.alloc[b], spent=budgetUsed(b,curMonth), resta=alloc-spent;
+    const alloc=inc0*curAlloc[b], spent=budgetUsed(b,curMonth), resta=alloc-spent;
     const pct=alloc>0?Math.min(spent/alloc*100,100):(spent>0?100:0);
     const over=spent>alloc&&alloc>0;
     const isSave=b==='aho'||b==='inv';
@@ -546,7 +559,9 @@ function rowHtml(t){
   let extra='';
   if(t.bucket!=='gf') extra+=`<span>·</span><span>${t.cat}</span>`;
   if(t.goal){const g=S.savings.find(x=>x.id===t.goal)||S.investments.find(x=>x.id===t.goal);if(g&&g.name!==t.cat)extra+=`<span class="pill">${g.name}</span>`;}
-  const positive = t.type==='income' || (t.type==='saving'&&t.amount>0) || (t.type==='invest'&&t.kind==='pool');
+  const positive = t.type==='income'
+    || ((t.type==='saving'||t.type==='invest') && t.amount>0)
+    || (t.type==='expense' && t.amount<0);
   return `<div class="row" data-tx="${t.id}">
     <div class="chip" style="background:${col}">${init}</div>
     <div class="info"><div class="t1">${title}</div>
@@ -559,7 +574,7 @@ function rowHtml(t){
 function renderAhorros(){
   const total=S.savings.reduce((a,g)=>a+g.balance,0);
   document.getElementById('savTotal').textContent=money(total);
-  const inc=incomeOf(curMonth), alloc=inc*S.alloc.aho;
+  const inc=incomeOf(curMonth), alloc=inc*allocFor(mkey(curMonth,curYear)).aho;
   const aportadoMesTotal=txMonth(curMonth).filter(t=>t.bucket==='aho'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
   const disponible=Math.max(0,alloc-aportadoMesTotal);
   document.getElementById('savSub').textContent=`Disponible para aportar: ${money(disponible)}`;
@@ -593,18 +608,19 @@ function renderInv(){
   const total=S.investments.reduce((a,i)=>a+i.value,0);
   document.getElementById('invPool').textContent=money(pool);
   document.getElementById('invSub').textContent=`Portafolio invertido: ${money(total)} · toca para ajustar`;
-  const inc=incomeOf(curMonth), alloc=inc*S.alloc.inv;
+  const inc=incomeOf(curMonth), alloc=inc*allocFor(mkey(curMonth,curYear)).inv;
   const aportadoMes=budgetUsed('inv',curMonth);
   document.getElementById('invAvail').textContent=money(Math.max(0,alloc-aportadoMes));
   const tgt=S.investments.reduce((a,i)=>a+i.target,0)||1;
   const body=document.getElementById('rebalBody');body.innerHTML='';
+  const base=total+pool;
   S.investments.forEach(i=>{
     const curP=total>0?i.value/total:0, tgtP=i.target/tgt;
-    const targetVal=total*tgtP, diff=targetVal-i.value;
+    const targetVal=base*tgtP, diff=targetVal-i.value;
     const buy = diff>1?`<span class="buy">+${money(diff)}</span>`:diff<-1?`<span class="sell">${money(diff)}</span>`:'—';
     body.innerHTML+=`<tr data-invedit="${i.id}"><td>${i.name}</td><td>${(curP*100).toFixed(1)}%</td><td>${(tgtP*100).toFixed(0)}%</td><td>${buy}</td></tr>`;
   });
-  document.getElementById('rebalHint').textContent='«Comprar» = cuánto añadir a cada índice para volver a tu distribución objetivo. Toca una fila para actualizar su valor de mercado.';
+  document.getElementById('rebalHint').textContent='«Comprar» = cuánto poner en cada índice usando tu saldo «para invertir» para acercarte al objetivo. Base = portafolio invertido + para invertir. Toca una fila para actualizar su valor de mercado.';
 }
 
 /* ---------- MÁS ---------- */
@@ -626,14 +642,35 @@ function renderMas(){
   // settings inputs
   document.getElementById('setCur').value=S.settings.currency;
   document.getElementById('setRemind').classList.toggle('on',!!S.settings.remind);
-  // alloc
+  // alloc — muestra los porcentajes vigentes AHORA (según historial)
   const ac=document.getElementById('allocCard');
+  const cur=allocFor(mkey(curMonth,curYear));
   ac.innerHTML=['gf','gv','aho','inv'].map(b=>`
     <div class="allocrow"><span class="dot2" style="background:${BUCKETS[b].hex}"></span>
     <span class="an">${BUCKETS[b].name}</span>
-    <input class="mono" type="number" inputmode="decimal" step="0.5" data-alloc="${b}" value="${(S.alloc[b]*100).toFixed(1)}"><span style="font-family:var(--mono);font-size:12px">%</span></div>`).join('')+
-    `<div class="allocsum" id="allocSum"></div>`;
+    <input class="mono" type="number" inputmode="decimal" step="0.5" data-alloc="${b}" value="${(cur[b]*100).toFixed(1)}"><span style="font-family:var(--mono);font-size:12px">%</span></div>`).join('')+
+    `<div class="allocsum" id="allocSum"></div>
+     <div class="hint" style="margin-top:6px">Al guardar, los porcentajes aplican desde <b>${MONTHS_ES[curMonth]} ${curYear}</b> en adelante. Los meses anteriores mantienen los porcentajes que estaban vigentes entonces.</div>
+     <button class="mini" id="allocSave" style="margin-top:8px;width:100%;padding:10px">Guardar porcentajes desde ${MONTHS_ES[curMonth]} ${curYear}</button>
+     ${(S.allocHistory||[]).length>1?`<div class="hint" style="margin-top:10px"><b>Historial:</b><br>${S.allocHistory.slice().sort((a,b)=>a.from.localeCompare(b.from)).map(e=>`${e.from} · GF ${(e.alloc.gf*100).toFixed(1)}% · GV ${(e.alloc.gv*100).toFixed(1)}% · Aho ${(e.alloc.aho*100).toFixed(1)}% · Inv ${(e.alloc.inv*100).toFixed(1)}%`).join('<br>')}</div>`:''}`;
   updAllocSum();
+  document.getElementById('allocSave').onclick=saveAllocChange;
+}
+function saveAllocChange(){
+  const na={};
+  ['gf','gv','aho','inv'].forEach(b=>{na[b]=parseFloat(document.querySelector(`[data-alloc="${b}"]`).value||0)/100;});
+  const sum=Object.values(na).reduce((a,x)=>a+x,0);
+  if(Math.abs(sum-1)>0.005){toast('Los porcentajes deben sumar 100%');return;}
+  const from=mkey(curMonth,curYear);
+  const h=S.allocHistory=S.allocHistory||[];
+  const existing=h.findIndex(e=>e.from===from);
+  if(existing>=0) h[existing].alloc=na; else h.push({from,alloc:na});
+  h.sort((a,b)=>a.from.localeCompare(b.from));
+  S.alloc=na; // current alloc mirror = the most-recent one relevant now
+  // if the newest entry is what we just saved, keep S.alloc = it; otherwise use the latest
+  const latest=h[h.length-1];
+  S.alloc=latest.alloc;
+  save();render();toast('Porcentajes guardados desde '+from);
 }
 function updAllocSum(){
   const sum=['gf','gv','aho','inv'].reduce((a,b)=>a+parseFloat(document.querySelector(`[data-alloc="${b}"]`).value||0),0);
@@ -655,12 +692,13 @@ function quickAdd(preType){
 }
 function drawAddSheet(){
   const st=sheetState;
-  const types=[['expense','Fijo','gf'],['expense','Variable','gv'],['income','Ingreso'],['saving','Ahorro'],['invest','Inversión']];
   const isType=(t,b)=> st.type===t && (b?st.bucket===b:true) && !(t==='expense'&&!b);
   const catList = st.type==='income'?S.cats.income : st.type==='expense'?S.cats[st.bucket]
     : st.type==='saving'?S.savings.map(g=>g.name):[];
-  const goalSelect = (st.type==='saving');
   const today=new Date();const dstr=`${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(Math.min(today.getDate(),28)).padStart(2,'0')}`;
+  const bkOpts=[['gf','Gastos fijos'],['gv','Gastos variables'],['aho','Ahorros'],['inv','Inversiones']];
+  const isSavingsOrInv = st.type==='saving' || st.type==='invest';
+  const canBeUso = st.type==='saving';
 
   openSheet(`
     <h2>${st.editId?'Editar':'Registrar'}<button class="x" data-close>✕</button></h2>
@@ -670,55 +708,175 @@ function drawAddSheet(){
       <button data-t="income" class="${st.type==='income'?'on':''}">Ingreso</button>
       <button data-t="saving" class="${st.type==='saving'?'on':''}">Ahorro</button>
       <button data-t="invest" class="${st.type==='invest'?'on':''}">Invertir</button>
+      <button data-t="transfer" class="${st.type==='transfer'?'on':''}">Traspaso</button>
     </div>
-    <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
-    ${st.type==='invest'
-      ? `<div class="field"><div class="hint" style="margin:0">Se suma a tu dinero <b>para invertir</b>. Cuando lo pongas en un índice, usá <b>Invertir</b> en la pestaña Inversiones.</div></div>`
-      : `<div class="field"><label class="fl">${st.type==='saving'?'Meta':'Categoría'}</label>
-         <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
 
-    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
-    ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&!/^Import/.test(st.note)?st.note:''}"></div>`:''}
-
-    <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
-    ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
+    ${st.type==='transfer' ? `
+      <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
+      <div class="split">
+        <div class="field"><label class="fl">Desde</label>
+          <select id="tFrom">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.tFrom===k?'selected':''}>${l}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label class="fl">Hacia</label>
+          <select id="tTo">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.tTo===k?'selected':''}>${l}</option>`).join('')}</select>
+        </div>
+      </div>
+      ${(st.tFrom==='aho'||st.tTo==='aho')?`<div class="field"><label class="fl">Meta de ahorro ${st.tFrom==='aho'?'de donde sale':'a la que va'}</label><select id="tGoal">${S.savings.map(g=>`<option value="${g.id}">${g.name}</option>`).join('')}</select></div>`:''}
+      <div class="split">
+        <div class="field"><label class="fl">Fecha salida</label><input class="date mono" id="dateOut" type="date" value="${st.dateOut||dstr}"></div>
+        <div class="field"><label class="fl">Fecha entrada</label><input class="date mono" id="dateIn2" type="date" value="${st.dateIn||dstr}"></div>
+      </div>
+      <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="motivo del traspaso" value="${st.note||''}"></div>
+      <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Registrar traspaso'}</button>
+      ${st.editId?`<button class="ghost" id="delBtn">Eliminar traspaso</button>`:''}
+    ` : `
+      <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
+      ${st.type==='invest'
+        ? `<div class="field"><div class="hint" style="margin:0">Se suma a tu dinero <b>para invertir</b>. Cuando lo pongas en un índice, usá <b>Invertir</b> en la pestaña Inversiones.</div></div>`
+        : `<div class="field"><label class="fl">${st.type==='saving'?'Meta':'Categoría'}</label>
+           <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
+      ${canBeUso?`
+        <div class="toggle" id="usoTog">
+          <div class="lbl2">Registrar como uso (salida)<small>Marcá si estás <b>sacando</b> plata en vez de aportar</small></div>
+          <div class="sw ${st.uso?'on':''}"><i></i></div>
+        </div>`:''}
+      <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
+      ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&!/^Import/.test(st.note)?st.note:''}"></div>`:''}
+      <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
+      ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
+    `}
   `);
 
   // wire type tabs
   document.getElementById('typeTabs').onclick=e=>{const b=e.target.closest('button');if(!b)return;
     st.type=b.dataset.t; if(b.dataset.b)st.bucket=b.dataset.b;
-    st.cat=null; st.goal=null; st.amount=document.getElementById('amtIn').value;
+    st.cat=null; st.goal=null; st.uso=false; st.amount=document.getElementById('amtIn')?.value||'';
+    // defaults for transfer
+    if(st.type==='transfer'){st.tFrom=st.tFrom||'aho'; st.tTo=st.tTo||'gv';}
     drawAddSheet();};
 
+  // uso toggle
+  const ut=document.getElementById('usoTog');
+  if(ut) ut.onclick=()=>{st.uso=!st.uso;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
+
+  // transfer redraw on from/to change (to show goal picker)
+  const tf=document.getElementById('tFrom'), tt=document.getElementById('tTo');
+  if(tf) tf.onchange=()=>{st.tFrom=tf.value;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
+  if(tt) tt.onchange=()=>{st.tTo=tt.value;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
+
   document.getElementById('saveBtn').onclick=commitAdd;
-  const del=document.getElementById('delBtn'); if(del)del.onclick=()=>{S.tx=S.tx.filter(t=>t.id!==st.editId);save();closeSheet();render();toast('Movimiento eliminado');};
+  const del=document.getElementById('delBtn'); if(del)del.onclick=()=>{deleteTx(st.editId);closeSheet();render();toast('Movimiento eliminado');};
 }
+/* apply/revert a tx's effect on savings balances or invest pool */
+function applyTx(t){
+  if(t.bucket==='aho' && t.goal){const g=S.savings.find(x=>x.id===t.goal); if(g) g.balance+=t.amount;}
+  if(t.bucket==='inv' && t.kind==='pool'){S.investPool=(S.investPool||0)+t.amount;}
+  if(t.bucket==='inv' && t.kind==='deploy'){S.investPool=(S.investPool||0)-t.amount; const ix=S.investments.find(x=>x.id===t.goal); if(ix) ix.value+=t.amount;}
+}
+function revertTx(t){
+  if(t.bucket==='aho' && t.goal){const g=S.savings.find(x=>x.id===t.goal); if(g) g.balance-=t.amount;}
+  if(t.bucket==='inv' && t.kind==='pool'){S.investPool=(S.investPool||0)-t.amount;}
+  if(t.bucket==='inv' && t.kind==='deploy'){S.investPool=(S.investPool||0)+t.amount; const ix=S.investments.find(x=>x.id===t.goal); if(ix) ix.value-=t.amount;}
+}
+function deleteTx(id){
+  // handles regular tx AND transfer pairs (linked via transferId)
+  const t=S.tx.find(x=>x.id===id); if(!t) return;
+  const ids=t.transferId ? S.tx.filter(x=>x.transferId===t.transferId).map(x=>x.id) : [id];
+  ids.forEach(i=>{const x=S.tx.find(y=>y.id===i); if(x){revertTx(x); S.tx=S.tx.filter(y=>y.id!==i);}});
+  save();
+}
+
 function commitAdd(){
   const st=sheetState;
+  // --- TRANSFER ---
+  if(st.type==='transfer'){
+    let amt=parseFloat(document.getElementById('amtIn').value||0);
+    const fromB=document.getElementById('tFrom').value, toB=document.getElementById('tTo').value;
+    const dateOut=document.getElementById('dateOut').value, dateIn2=document.getElementById('dateIn2').value;
+    const note=(document.getElementById('noteIn')?.value||'').trim();
+    const goalEl=document.getElementById('tGoal');
+    if(!amt||amt<=0){toast('Escribe un monto');return;}
+    if(fromB===toB){toast('Elegí cuentas distintas');return;}
+    // if editing, first revert the old pair
+    if(st.editId){deleteTx(st.editId);}
+    const tid='tr_'+uid();
+    const goalId=goalEl?goalEl.value:null;
+    // OUT leg
+    const out=makeLegTx({tid,side:'out',bucket:fromB,other:toB,amt,date:dateOut,note,goalId});
+    // IN leg
+    const inc=makeLegTx({tid,side:'in',bucket:toB,other:fromB,amt,date:dateIn2,note,goalId});
+    [out,inc].forEach(tx=>{applyTx(tx); S.tx.push(tx);});
+    save();closeSheet();render();toast('Traspaso registrado');
+    return;
+  }
+  // --- normal ---
   let amt=parseFloat(document.getElementById('amtIn').value||0);
   const catEl=document.getElementById('catIn');
   const cat=st.type==='invest'?'Para invertir':(catEl?catEl.value:'');
   const date=document.getElementById('dateIn').value||`${curYear}-${String(curMonth+1).padStart(2,'0')}-15`;
   const note=(document.getElementById('noteIn')?.value||'').trim();
-  let total=amt, shared=false;
   if(!amt||amt<=0){toast('Escribe un monto');return;}
+  const isUso = st.type==='saving' && st.uso;
+  const signed = isUso ? -amt : amt;
   const bucket = st.type==='income'?'income':st.type==='expense'?st.bucket:st.type==='saving'?'aho':'inv';
   let goal=null, kind=undefined;
-  if(st.type==='saving'){const g=S.savings.find(x=>x.name===cat);if(g){goal=g.id;if(!st.editId)g.balance+=amt;}}
-  if(st.type==='invest'){kind='pool';if(!st.editId)S.investPool=(S.investPool||0)+amt;}
-  const rec={id:st.editId||uid(),type:st.type,bucket,cat,amount:amt,total,shared,date,note,goal,kind};
-  if(st.editId){S.tx=S.tx.map(t=>t.id===st.editId?rec:t);}else{S.tx.push(rec);}
+  if(st.type==='saving'){const g=S.savings.find(x=>x.name===cat);if(g){goal=g.id;}}
+  if(st.type==='invest'){kind='pool';}
+  // build record
+  const rec={id:st.editId||uid(),type:st.type,bucket,cat,amount:signed,total:Math.abs(amt),shared:false,date,note,goal,kind};
+  if(st.editId){
+    const old=S.tx.find(t=>t.id===st.editId);
+    if(old) revertTx(old);
+    S.tx=S.tx.map(t=>t.id===st.editId?rec:t);
+    applyTx(rec);
+  }else{
+    S.tx.push(rec);
+    applyTx(rec);
+  }
   save();closeSheet();render();
-  toast(st.type==='income'?'Ingreso registrado':st.type==='saving'?'Ahorro aportado':st.type==='invest'?'Agregado para invertir':'Gasto registrado');
-  // switch to relevant view
+  toast(st.type==='income'?'Ingreso registrado':st.type==='saving'?(isUso?'Uso de ahorro registrado':'Ahorro aportado'):st.type==='invest'?'Agregado para invertir':'Gasto registrado');
   if(st.type==='saving')go('ahorros'); else if(st.type==='invest')go('inv');
+}
+
+// Build one leg of a transfer with the right semantics per bucket.
+// Aho/Inv: amount POSITIVE = entering (aporte), NEGATIVE = leaving (uso).
+// GF/GV (expense buckets): amount POSITIVE = leaving (gasto extra), NEGATIVE = entering (menos gasto).
+function makeLegTx({tid,side,bucket,other,amt,date,note,goalId}){
+  const label = side==='out'
+    ? `Traspaso hacia ${BUCKETS[other].name}`
+    : `Traspaso desde ${BUCKETS[other].name}`;
+  const t={id:uid(),transferId:tid,date,note:note||label,shared:false,cat:label};
+  if(bucket==='gf'||bucket==='gv'){
+    t.type='expense'; t.bucket=bucket;
+    t.amount = side==='out' ? amt : -amt;  // OUT: sale plata (+gasto). IN: entra plata (-gasto).
+  } else if(bucket==='aho'){
+    t.type='saving'; t.bucket='aho'; t.goal=goalId||null;
+    t.amount = side==='in' ? amt : -amt;
+  } else if(bucket==='inv'){
+    t.type='invest'; t.bucket='inv'; t.kind='pool';
+    t.amount = side==='in' ? amt : -amt;
+  }
+  return t;
 }
 
 /* ---------- edit existing tx ---------- */
 function editTx(id){
   const t=S.tx.find(x=>x.id===id);if(!t)return;
-  sheetState={type:t.type,bucket:t.bucket==='income'?'gf':t.bucket,shared:t.shared,goal:t.goal,editId:t.id,
-    amount:t.amount,total:t.total,cat:t.cat,date:t.date,note:t.note};
+  if(t.transferId){
+    // find the pair
+    const pair=S.tx.filter(x=>x.transferId===t.transferId);
+    const out=pair.find(x=>x.amount<0)||pair[0];
+    const inn=pair.find(x=>x.amount>0)||pair[1];
+    sheetState={type:'transfer',editId:t.id,
+      amount:Math.abs(out.amount),
+      tFrom:out.bucket, tTo:inn.bucket,
+      dateOut:out.date, dateIn:inn.date,
+      note:(t.note && !/^Traspaso /.test(t.note))?t.note:''};
+    drawAddSheet(); return;
+  }
+  sheetState={type:t.type,bucket:t.bucket==='income'?'gf':t.bucket,shared:false,goal:t.goal,editId:t.id,
+    amount:Math.abs(t.amount),total:t.total,cat:t.cat,date:t.date,note:t.note,
+    uso:t.type==='saving' && t.amount<0};
   drawAddSheet();
 }
 
@@ -755,8 +913,9 @@ function goalMove(id,dir){ // dir 'add' or 'use'
   document.getElementById('gm').onclick=()=>{
     let amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
     const note=document.getElementById('noteIn').value.trim();const date=document.getElementById('dateIn').value;
-    if(dir==='use'){g.balance-=amt;S.tx.push({id:uid(),type:'saving',bucket:'aho',cat:g.name,amount:-amt,total:-amt,shared:false,date,note:note||'Uso',goal:id});}
-    else{g.balance+=amt;S.tx.push({id:uid(),type:'saving',bucket:'aho',cat:g.name,amount:amt,total:amt,shared:false,date,note,goal:id});}
+    const signed = dir==='use' ? -amt : amt;
+    const rec={id:uid(),type:'saving',bucket:'aho',cat:g.name,amount:signed,total:Math.abs(amt),shared:false,date,note:note||(dir==='use'?'Uso':''),goal:id};
+    S.tx.push(rec); applyTx(rec);
     save();closeSheet();render();toast(dir==='add'?'Aporte guardado':'Uso registrado');};
 }
 function indexSheet(i){
@@ -783,8 +942,8 @@ function poolAddSheet(){
   document.getElementById('pa').onclick=()=>{
     const amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
     const date=document.getElementById('dateIn').value;const note=(document.getElementById('noteIn').value||'').trim();
-    S.investPool=(S.investPool||0)+amt;
-    S.tx.push({id:uid(),type:'invest',bucket:'inv',cat:'Para invertir',amount:amt,total:amt,shared:false,date,note,kind:'pool'});
+    const rec={id:uid(),type:'invest',bucket:'inv',cat:'Para invertir',amount:amt,total:amt,shared:false,date,note,kind:'pool'};
+    S.tx.push(rec); applyTx(rec);
     save();closeSheet();render();toast('Agregado para invertir');};
 }
 function deploySheet(){
@@ -800,8 +959,8 @@ function deploySheet(){
     const amt=parseFloat(document.getElementById('amtIn').value||0);if(!amt){toast('Escribe un monto');return;}
     const ixId=document.getElementById('ixIn').value;const ix=S.investments.find(x=>x.id===ixId);
     const date=document.getElementById('dateIn').value;
-    S.investPool=(S.investPool||0)-amt; if(ix)ix.value+=amt;
-    S.tx.push({id:uid(),type:'invest',bucket:'inv',cat:ix?ix.name:'Índice',amount:amt,total:amt,shared:false,date,note:'Invertido',kind:'deploy',goal:ixId});
+    const rec={id:uid(),type:'invest',bucket:'inv',cat:ix?ix.name:'Índice',amount:amt,total:amt,shared:false,date,note:'Invertido',kind:'deploy',goal:ixId};
+    S.tx.push(rec); applyTx(rec);
     save();closeSheet();render();toast('Inversión registrada');};
 }
 function editPoolSheet(){
@@ -945,8 +1104,8 @@ function yearSheet(y){
     const svTx=txMonth(m,Y).filter(t=>t.bucket==='aho'), ivTx=txMonth(m,Y).filter(t=>t.bucket==='inv');
     const ahoIn=svTx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
     const ahoOut=svTx.filter(t=>t.amount<0).reduce((a,t)=>a-t.amount,0);
-    const invIn=ivTx.filter(t=>t.kind==='pool').reduce((a,t)=>a+t.amount,0);
-    const invOut=ivTx.filter(t=>t.kind==='deploy').reduce((a,t)=>a+t.amount,0);
+    const invIn=ivTx.filter(t=>t.kind==='pool'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
+    const invOut=ivTx.filter(t=>t.kind==='deploy'||(t.kind==='pool'&&t.amount<0)).reduce((a,t)=>a+Math.abs(t.amount),0);
     return {m,inc,gf,gv,ahoIn,ahoOut,invIn,invOut,spent:gf+gv,saved:(ahoIn-ahoOut)+invIn};
   });
   const T=M.reduce((a,x)=>({inc:a.inc+x.inc,spent:a.spent+x.spent,saved:a.saved+x.saved,
@@ -1057,9 +1216,7 @@ document.getElementById('setRemind').onclick=async()=>{
   toast(S.settings.remind?'Recordatorio activado':'Recordatorio desactivado');
 };
 document.body.addEventListener('input',e=>{
-  if(e.target.dataset.alloc){
-    S.alloc[e.target.dataset.alloc]=parseFloat(e.target.value||0)/100;save();updAllocSum();
-  }
+  if(e.target.dataset.alloc){ updAllocSum(); }
 });
 
 /* reminder while app is open (best-effort; iOS limits background) */
