@@ -326,6 +326,10 @@ kbd{font-family:var(--mono);background:var(--card-2);border:1px solid var(--line
     <div class="card" id="incomeList"></div>
     <button class="linkbtn" id="addIncome" style="margin-bottom:18px">+ Registrar ingreso</button>
 
+    <div class="eyebrow">Traspasos entre meses</div>
+    <div class="card" id="trList"></div>
+    <button class="linkbtn" id="newTransfer" style="margin-bottom:18px">↔ Nuevo traspaso entre meses</button>
+
     <div class="eyebrow">Me deben</div>
     <div class="card" id="debtsList"></div>
     <button class="linkbtn" id="addDebt" style="margin-bottom:18px">+ Añadir préstamo / deuda</button>
@@ -433,6 +437,7 @@ function freshState(){
     savings:SEED_SAVINGS.map(g=>({id:uid(),...g})),
     investments:SEED_INV.map(i=>({id:uid(),...i})),
     investPool:0,
+    savingsPool:0,
     debts:SEED_DEBTS.map(d=>({id:uid(),...d})),
     tx,
     seeded:true,
@@ -445,6 +450,7 @@ function load(){
 }
 function migrate(){
   if(S.investPool===undefined)S.investPool=0;
+  if(S.savingsPool===undefined)S.savingsPool=0;
   if(Array.isArray(S.savings))S.savings.forEach(g=>{if(g.usedBefore===undefined){const sd=SEED_SAVINGS.find(x=>x.name===g.name);g.usedBefore=sd?sd.usedBefore:0;}});
   if(!Array.isArray(S.allocHistory)||!S.allocHistory.length){
     S.allocHistory=[{from:'2023-01',alloc:{...S.alloc}}];
@@ -478,10 +484,23 @@ const txMonth=(m,y)=>S.tx.filter(t=>inMonth(t.date,m,y));
 function incomeOf(m,y){return txMonth(m,y).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);}
 function spentOf(b,m,y){return txMonth(m,y).filter(t=>t.bucket===b&&(t.type==='expense'||t.type==='saving'||t.type==='invest')).reduce((a,t)=>a+t.amount,0);}
 function budgetUsed(b,m,y){
+  // For GF/GV: net expense of the month (sum of expense tx, incl. transfer signs).
+  // For AHO: contributions to goals (positive, tied to a goal).
+  // For INV: normal aportes to pool (positive, not a transfer).
   const tx=txMonth(m,y).filter(t=>t.bucket===b);
-  if(b==='aho') return tx.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
-  if(b==='inv') return tx.filter(t=>t.kind==='pool'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
+  if(b==='aho') return tx.filter(t=>t.amount>0 && t.goal).reduce((a,t)=>a+t.amount,0);
+  if(b==='inv') return tx.filter(t=>t.kind==='pool'&&!t.transferId&&t.amount>0).reduce((a,t)=>a+t.amount,0);
   return tx.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+}
+// Net transfer movement for a bucket in a given month (in - out).
+function bucketTransfersNet(b,m,y){
+  const tx=txMonth(m,y).filter(t=>t.bucket===b&&t.transferId);
+  if(b==='gf'||b==='gv'){
+    // GF/GV expense convention: OUT = +amt, IN = -amt. Net "money in" = -sum.
+    return -tx.reduce((a,t)=>a+t.amount,0);
+  }
+  // AHO/INV pool convention: IN = +amt, OUT = -amt. Net "money in" = +sum.
+  return tx.reduce((a,t)=>a+t.amount,0);
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1900);}
 
@@ -529,16 +548,30 @@ function renderInicio(){
   const inc0=inc||0;
   const wrap=document.getElementById('buckets');wrap.innerHTML='';
   ['gf','gv','aho','inv'].forEach(b=>{
-    const alloc=inc0*curAlloc[b], spent=budgetUsed(b,curMonth), resta=alloc-spent;
-    const pct=alloc>0?Math.min(spent/alloc*100,100):(spent>0?100:0);
-    const over=spent>alloc&&alloc>0;
+    const alloc=inc0*curAlloc[b];
+    const used=budgetUsed(b,curMonth);
     const isSave=b==='aho'||b==='inv';
+    let base, resta, spent, over, pct;
+    if(isSave){
+      const net=bucketTransfersNet(b,curMonth); // + entered, - left
+      base=alloc+net;
+      resta=base-used;         // disponible para aportar
+      spent=used;              // "aportado" a metas / pool normal (sin traspasos)
+      over=resta<0;
+      pct=base>0?Math.min(used/base*100,100):(used>0?100:0);
+    } else {
+      base=alloc;
+      spent=used;              // gastos netos ya incluyen signo de traspasos
+      resta=base-used;
+      over=resta<0&&base>0;
+      pct=base>0?Math.min(Math.max(used,0)/base*100,100):(used>0?100:0);
+    }
     const card=document.createElement('div');card.className='bk';
     card.innerHTML=`
       <span class="tag" style="background:${BUCKETS[b].hex}">${BUCKETS[b].name}</span>
       <div class="nm">${isSave?'Aportado':'Gastado'} ${money(spent)}</div>
       <div class="val ${over?'neg':''}">${money(resta)}</div>
-      <div class="cap">${over?'excedido':'disponible'} · de ${money(alloc)}</div>
+      <div class="cap">${over?'excedido':'disponible'} · de ${money(base)}</div>
       <div class="track"><div class="fill" style="width:${pct}%;background:${over?'var(--rust)':BUCKETS[b].hex}"></div></div>`;
     wrap.appendChild(card);
   });
@@ -575,13 +608,16 @@ function renderAhorros(){
   const total=S.savings.reduce((a,g)=>a+g.balance,0);
   document.getElementById('savTotal').textContent=money(total);
   const inc=incomeOf(curMonth), alloc=inc*allocFor(mkey(curMonth,curYear)).aho;
-  const aportadoMesTotal=txMonth(curMonth).filter(t=>t.bucket==='aho'&&t.amount>0).reduce((a,t)=>a+t.amount,0);
-  const disponible=Math.max(0,alloc-aportadoMesTotal);
-  document.getElementById('savSub').textContent=`Disponible para aportar: ${money(disponible)}`;
+  const net=bucketTransfersNet('aho',curMonth);
+  const monthBase=alloc+net;                                     // pool disponible del mes (base para sugerencias)
+  const aportadoMetas=budgetUsed('aho',curMonth);                // aportes a metas del mes
+  const disponible=monthBase-aportadoMetas;                      // lo que queda por aportar
+  const trTxt=net?` · ${net>0?'+':'−'}${money(Math.abs(net))} de traspasos`:'';
+  document.getElementById('savSub').textContent=`Disponible para ahorrar: ${money(disponible)}${trTxt}`;
   const list=document.getElementById('goalsList');list.innerHTML='';
   S.savings.forEach(g=>{
     const prog=g.target?Math.min(g.balance/g.target*100,100):null;
-    const monthShare=alloc*(g.pct||0);
+    const monthShare=monthBase*(g.pct||0);
     const usedApp=S.tx.filter(t=>t.goal===g.id&&t.amount<0).reduce((a,t)=>a-t.amount,0);
     const totalUsed=(g.usedBefore||0)+usedApp;
     const aportadoMes=txMonth(curMonth).filter(t=>t.goal===g.id&&t.amount>0).reduce((a,t)=>a+t.amount,0);
@@ -609,8 +645,12 @@ function renderInv(){
   document.getElementById('invPool').textContent=money(pool);
   document.getElementById('invSub').textContent=`Portafolio invertido: ${money(total)} · toca para ajustar`;
   const inc=incomeOf(curMonth), alloc=inc*allocFor(mkey(curMonth,curYear)).inv;
-  const aportadoMes=budgetUsed('inv',curMonth);
-  document.getElementById('invAvail').textContent=money(Math.max(0,alloc-aportadoMes));
+  const net=bucketTransfersNet('inv',curMonth);
+  const monthBase=alloc+net;
+  const aportadoNormal=budgetUsed('inv',curMonth);
+  const disponible=monthBase-aportadoNormal;
+  const trTxt=net?` (${net>0?'+':'−'}${money(Math.abs(net))} trasp.)`:'';
+  document.getElementById('invAvail').textContent=money(disponible)+trTxt;
   const tgt=S.investments.reduce((a,i)=>a+i.target,0)||1;
   const body=document.getElementById('rebalBody');body.innerHTML='';
   const base=total+pool;
@@ -629,6 +669,23 @@ function renderMas(){
   const il=document.getElementById('incomeList');
   const inc=txMonth(curMonth).filter(t=>t.type==='income');
   il.innerHTML = inc.length? inc.map(rowHtml).join('') : `<div class="empty">Sin ingresos en ${MONTHS_ES[curMonth]}.</div>`;
+  // transfers list (grouped by transferId, last 10 by date)
+  const trl=document.getElementById('trList');
+  const groups={};
+  S.tx.filter(t=>t.transferId).forEach(t=>{(groups[t.transferId]=groups[t.transferId]||[]).push(t);});
+  const pairs=Object.values(groups).filter(p=>p.length===2).map(p=>{
+    const out = p.find(t=>((t.bucket==='aho'||t.bucket==='inv') && t.amount<0) || ((t.bucket==='gf'||t.bucket==='gv') && t.amount>0)) || p[0];
+    const inn = p.find(t=>t!==out) || p[1];
+    return {out,inn,tid:p[0].transferId,date:out.date};
+  }).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+  const fmtMY=d=>`${MONTHS_ES[+d.slice(5,7)-1]} ${d.slice(0,4)}`;
+  trl.innerHTML = pairs.length ? pairs.map(p=>`
+    <div class="row" data-tredit="${p.tid}">
+      <div class="chip" style="background:var(--stone)">↔</div>
+      <div class="info"><div class="t1">${BUCKETS[p.out.bucket].name} ${fmtMY(p.out.date)} → ${BUCKETS[p.inn.bucket].name} ${fmtMY(p.inn.date)}</div>
+        <div class="t2"><span>${money(Math.abs(p.out.amount))}</span>${p.out.note && !/^Traspaso /.test(p.out.note)?`<span>·</span><span>${p.out.note}</span>`:''}</div></div>
+      <div class="amt">↔</div></div>`).join('')
+    : `<div class="empty">Sin traspasos registrados.</div>`;
   // debts
   const dl=document.getElementById('debtsList');
   const totalDebt=S.debts.reduce((a,d)=>a+(d.amount||0),0);
@@ -708,61 +765,32 @@ function drawAddSheet(){
       <button data-t="income" class="${st.type==='income'?'on':''}">Ingreso</button>
       <button data-t="saving" class="${st.type==='saving'?'on':''}">Ahorro</button>
       <button data-t="invest" class="${st.type==='invest'?'on':''}">Invertir</button>
-      <button data-t="transfer" class="${st.type==='transfer'?'on':''}">Traspaso</button>
     </div>
-
-    ${st.type==='transfer' ? `
-      <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
-      <div class="split">
-        <div class="field"><label class="fl">Desde</label>
-          <select id="tFrom">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.tFrom===k?'selected':''}>${l}</option>`).join('')}</select>
-        </div>
-        <div class="field"><label class="fl">Hacia</label>
-          <select id="tTo">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.tTo===k?'selected':''}>${l}</option>`).join('')}</select>
-        </div>
-      </div>
-      ${(st.tFrom==='aho'||st.tTo==='aho')?`<div class="field"><label class="fl">Meta de ahorro ${st.tFrom==='aho'?'de donde sale':'a la que va'}</label><select id="tGoal">${S.savings.map(g=>`<option value="${g.id}">${g.name}</option>`).join('')}</select></div>`:''}
-      <div class="split">
-        <div class="field"><label class="fl">Fecha salida</label><input class="date mono" id="dateOut" type="date" value="${st.dateOut||dstr}"></div>
-        <div class="field"><label class="fl">Fecha entrada</label><input class="date mono" id="dateIn2" type="date" value="${st.dateIn||dstr}"></div>
-      </div>
-      <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="motivo del traspaso" value="${st.note||''}"></div>
-      <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Registrar traspaso'}</button>
-      ${st.editId?`<button class="ghost" id="delBtn">Eliminar traspaso</button>`:''}
-    ` : `
-      <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
-      ${st.type==='invest'
-        ? `<div class="field"><div class="hint" style="margin:0">Se suma a tu dinero <b>para invertir</b>. Cuando lo pongas en un índice, usá <b>Invertir</b> en la pestaña Inversiones.</div></div>`
-        : `<div class="field"><label class="fl">${st.type==='saving'?'Meta':'Categoría'}</label>
-           <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
-      ${canBeUso?`
-        <div class="toggle" id="usoTog">
-          <div class="lbl2">Registrar como uso (salida)<small>Marcá si estás <b>sacando</b> plata en vez de aportar</small></div>
-          <div class="sw ${st.uso?'on':''}"><i></i></div>
-        </div>`:''}
-      <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
-      ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&!/^Import/.test(st.note)?st.note:''}"></div>`:''}
-      <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
-      ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
-    `}
+    <div class="amtin"><span class="cur">${cur()}</span><input id="amtIn" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
+    ${st.type==='invest'
+      ? `<div class="field"><div class="hint" style="margin:0">Se suma a tu dinero <b>para invertir</b>. Cuando lo pongas en un índice, usá <b>Invertir</b> en la pestaña Inversiones.</div></div>`
+      : `<div class="field"><label class="fl">${st.type==='saving'?'Meta':'Categoría'}</label>
+         <select id="catIn">${catList.map(c=>`<option ${st.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>`}
+    ${canBeUso?`
+      <div class="toggle" id="usoTog">
+        <div class="lbl2">Registrar como uso (salida)<small>Marcá si estás <b>sacando</b> plata en vez de aportar</small></div>
+        <div class="sw ${st.uso?'on':''}"><i></i></div>
+      </div>`:''}
+    <div class="field"><label class="fl">Fecha</label><input class="date mono" id="dateIn" type="date" value="${st.date||dstr}"></div>
+    ${!(st.type==='expense'&&st.bucket==='gf')?`<div class="field"><label class="fl">Título (opcional)</label><input class="txt mono" id="noteIn" type="text" placeholder="si lo dejas vacío, se usa la categoría" value="${st.note&&!/^Import/.test(st.note)?st.note:''}"></div>`:''}
+    <button class="save" id="saveBtn">${st.editId?'Guardar cambios':'Guardar'}</button>
+    ${st.editId?`<button class="ghost" id="delBtn">Eliminar movimiento</button>`:''}
   `);
 
   // wire type tabs
   document.getElementById('typeTabs').onclick=e=>{const b=e.target.closest('button');if(!b)return;
     st.type=b.dataset.t; if(b.dataset.b)st.bucket=b.dataset.b;
     st.cat=null; st.goal=null; st.uso=false; st.amount=document.getElementById('amtIn')?.value||'';
-    // defaults for transfer
-    if(st.type==='transfer'){st.tFrom=st.tFrom||'aho'; st.tTo=st.tTo||'gv';}
     drawAddSheet();};
 
   // uso toggle
   const ut=document.getElementById('usoTog');
   if(ut) ut.onclick=()=>{st.uso=!st.uso;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
-
-  // transfer redraw on from/to change (to show goal picker)
-  const tf=document.getElementById('tFrom'), tt=document.getElementById('tTo');
-  if(tf) tf.onchange=()=>{st.tFrom=tf.value;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
-  if(tt) tt.onchange=()=>{st.tTo=tt.value;st.amount=document.getElementById('amtIn').value;drawAddSheet();};
 
   document.getElementById('saveBtn').onclick=commitAdd;
   const del=document.getElementById('delBtn'); if(del)del.onclick=()=>{deleteTx(st.editId);closeSheet();render();toast('Movimiento eliminado');};
@@ -770,11 +798,13 @@ function drawAddSheet(){
 /* apply/revert a tx's effect on savings balances or invest pool */
 function applyTx(t){
   if(t.bucket==='aho' && t.goal){const g=S.savings.find(x=>x.id===t.goal); if(g) g.balance+=t.amount;}
+  if(t.bucket==='aho' && t.kind==='pool'){S.savingsPool=(S.savingsPool||0)+t.amount;}
   if(t.bucket==='inv' && t.kind==='pool'){S.investPool=(S.investPool||0)+t.amount;}
   if(t.bucket==='inv' && t.kind==='deploy'){S.investPool=(S.investPool||0)-t.amount; const ix=S.investments.find(x=>x.id===t.goal); if(ix) ix.value+=t.amount;}
 }
 function revertTx(t){
   if(t.bucket==='aho' && t.goal){const g=S.savings.find(x=>x.id===t.goal); if(g) g.balance-=t.amount;}
+  if(t.bucket==='aho' && t.kind==='pool'){S.savingsPool=(S.savingsPool||0)-t.amount;}
   if(t.bucket==='inv' && t.kind==='pool'){S.investPool=(S.investPool||0)-t.amount;}
   if(t.bucket==='inv' && t.kind==='deploy'){S.investPool=(S.investPool||0)+t.amount; const ix=S.investments.find(x=>x.id===t.goal); if(ix) ix.value-=t.amount;}
 }
@@ -788,28 +818,6 @@ function deleteTx(id){
 
 function commitAdd(){
   const st=sheetState;
-  // --- TRANSFER ---
-  if(st.type==='transfer'){
-    let amt=parseFloat(document.getElementById('amtIn').value||0);
-    const fromB=document.getElementById('tFrom').value, toB=document.getElementById('tTo').value;
-    const dateOut=document.getElementById('dateOut').value, dateIn2=document.getElementById('dateIn2').value;
-    const note=(document.getElementById('noteIn')?.value||'').trim();
-    const goalEl=document.getElementById('tGoal');
-    if(!amt||amt<=0){toast('Escribe un monto');return;}
-    if(fromB===toB){toast('Elegí cuentas distintas');return;}
-    // if editing, first revert the old pair
-    if(st.editId){deleteTx(st.editId);}
-    const tid='tr_'+uid();
-    const goalId=goalEl?goalEl.value:null;
-    // OUT leg
-    const out=makeLegTx({tid,side:'out',bucket:fromB,other:toB,amt,date:dateOut,note,goalId});
-    // IN leg
-    const inc=makeLegTx({tid,side:'in',bucket:toB,other:fromB,amt,date:dateIn2,note,goalId});
-    [out,inc].forEach(tx=>{applyTx(tx); S.tx.push(tx);});
-    save();closeSheet();render();toast('Traspaso registrado');
-    return;
-  }
-  // --- normal ---
   let amt=parseFloat(document.getElementById('amtIn').value||0);
   const catEl=document.getElementById('catIn');
   const cat=st.type==='invest'?'Para invertir':(catEl?catEl.value:'');
@@ -838,19 +846,23 @@ function commitAdd(){
   if(st.type==='saving')go('ahorros'); else if(st.type==='invest')go('inv');
 }
 
-// Build one leg of a transfer with the right semantics per bucket.
-// Aho/Inv: amount POSITIVE = entering (aporte), NEGATIVE = leaving (uso).
-// GF/GV (expense buckets): amount POSITIVE = leaving (gasto extra), NEGATIVE = entering (menos gasto).
-function makeLegTx({tid,side,bucket,other,amt,date,note,goalId}){
+// Build one leg of a cross-month transfer with the right semantics per bucket.
+// Aho: pool contribution (kind='pool', no goal). Inv: same. GF/GV: expense with sign.
+// side='out': money LEAVES that bucket in that month.
+// side='in':  money ENTERS that bucket in that month (adds to disponible).
+function makeLegTx({tid,side,bucket,other,amt,date,note}){
+  const otherLbl=BUCKETS[other]?BUCKETS[other].name:other;
   const label = side==='out'
-    ? `Traspaso hacia ${BUCKETS[other].name}`
-    : `Traspaso desde ${BUCKETS[other].name}`;
+    ? `Traspaso hacia ${otherLbl}`
+    : `Traspaso desde ${otherLbl}`;
   const t={id:uid(),transferId:tid,date,note:note||label,shared:false,cat:label};
   if(bucket==='gf'||bucket==='gv'){
     t.type='expense'; t.bucket=bucket;
-    t.amount = side==='out' ? amt : -amt;  // OUT: sale plata (+gasto). IN: entra plata (-gasto).
+    // GF/GV: OUT = money leaving (+ gasto). IN = money entering (- gasto → aumenta disponible).
+    t.amount = side==='out' ? amt : -amt;
   } else if(bucket==='aho'){
-    t.type='saving'; t.bucket='aho'; t.goal=goalId||null;
+    // AHO pool contribution (no specific goal). Sign: IN = + (pool grows), OUT = - (pool shrinks).
+    t.type='saving'; t.bucket='aho'; t.kind='pool';
     t.amount = side==='in' ? amt : -amt;
   } else if(bucket==='inv'){
     t.type='invest'; t.bucket='inv'; t.kind='pool';
@@ -862,18 +874,7 @@ function makeLegTx({tid,side,bucket,other,amt,date,note,goalId}){
 /* ---------- edit existing tx ---------- */
 function editTx(id){
   const t=S.tx.find(x=>x.id===id);if(!t)return;
-  if(t.transferId){
-    // find the pair
-    const pair=S.tx.filter(x=>x.transferId===t.transferId);
-    const out=pair.find(x=>x.amount<0)||pair[0];
-    const inn=pair.find(x=>x.amount>0)||pair[1];
-    sheetState={type:'transfer',editId:t.id,
-      amount:Math.abs(out.amount),
-      tFrom:out.bucket, tTo:inn.bucket,
-      dateOut:out.date, dateIn:inn.date,
-      note:(t.note && !/^Traspaso /.test(t.note))?t.note:''};
-    drawAddSheet(); return;
-  }
+  if(t.transferId){ transferSheet(t.transferId); return; }
   sheetState={type:t.type,bucket:t.bucket==='income'?'gf':t.bucket,shared:false,goal:t.goal,editId:t.id,
     amount:Math.abs(t.amount),total:t.total,cat:t.cat,date:t.date,note:t.note,
     uso:t.type==='saving' && t.amount<0};
@@ -970,6 +971,81 @@ function editPoolSheet(){
     <button class="save" id="ps">Guardar</button>`);
   document.getElementById('ps').onclick=()=>{S.investPool=parseFloat(document.getElementById('poolIn').value||0);save();closeSheet();render();toast('Saldo actualizado');};
 }
+/* ---------- traspaso entre meses ---------- */
+let transferState={};
+function transferSheet(editId){
+  const bkOpts=[['gf','Gastos fijos'],['gv','Gastos variables'],['aho','Ahorros'],['inv','Inversiones']];
+  const monthDefault=`${curYear}-${String(curMonth+1).padStart(2,'0')}`;
+  if(editId){
+    // load existing pair
+    const pair=S.tx.filter(x=>x.transferId===editId);
+    if(pair.length!==2){toast('Traspaso inválido');return;}
+    // out leg = negative amount in aho/inv or positive in gf/gv
+    const out = pair.find(t=>((t.bucket==='aho'||t.bucket==='inv') && t.amount<0) || ((t.bucket==='gf'||t.bucket==='gv') && t.amount>0));
+    const inn = pair.find(t=>t!==out);
+    transferState={editId,tid:editId,
+      amount:Math.abs(out.amount),
+      fromB:out.bucket, toB:inn.bucket,
+      fromMonth:out.date.slice(0,7), toMonth:inn.date.slice(0,7),
+      note:(out.note && !/^Traspaso /.test(out.note))?out.note:''};
+  } else {
+    transferState={editId:null,amount:'',fromB:'gv',toB:'gv',
+      fromMonth:monthDefault, toMonth:monthDefault, note:''};
+  }
+  drawTransfer();
+}
+function drawTransfer(){
+  const st=transferState;
+  const bkOpts=[['gf','Gastos fijos'],['gv','Gastos variables'],['aho','Ahorros'],['inv','Inversiones']];
+  openSheet(`
+    <h2>${st.editId?'Editar traspaso':'Traspaso entre meses'}<button class="x" data-close>✕</button></h2>
+    <div class="hint" style="margin:0 0 12px">Mové saldo de una bolsa/mes hacia otra bolsa/mes. El movimiento queda registrado en ambos meses.</div>
+    <div class="amtin"><span class="cur">${cur()}</span><input id="trAmt" type="number" inputmode="decimal" placeholder="0" value="${st.amount||''}" autofocus></div>
+    <div class="split">
+      <div class="field"><label class="fl">Desde bolsa</label>
+        <select id="trFrom">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.fromB===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label class="fl">Desde mes</label>
+        <input class="txt mono" id="trFromMonth" type="month" value="${st.fromMonth}"></div>
+    </div>
+    <div class="split">
+      <div class="field"><label class="fl">Hacia bolsa</label>
+        <select id="trTo">${bkOpts.map(([k,l])=>`<option value="${k}" ${st.toB===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label class="fl">Hacia mes</label>
+        <input class="txt mono" id="trToMonth" type="month" value="${st.toMonth}"></div>
+    </div>
+    <div class="field"><label class="fl">Nota (opcional)</label><input class="txt mono" id="trNote" type="text" placeholder="motivo del traspaso" value="${st.note||''}"></div>
+    <button class="save" id="trSave">${st.editId?'Guardar cambios':'Registrar traspaso'}</button>
+    ${st.editId?`<button class="ghost" id="trDel">Eliminar traspaso</button>`:''}
+  `);
+  document.getElementById('trSave').onclick=commitTransfer;
+  const del=document.getElementById('trDel');
+  if(del) del.onclick=()=>{deleteTx(S.tx.find(x=>x.transferId===st.editId).id);closeSheet();render();toast('Traspaso eliminado');};
+}
+function commitTransfer(){
+  const st=transferState;
+  const amt=parseFloat(document.getElementById('trAmt').value||0);
+  const fromB=document.getElementById('trFrom').value;
+  const toB=document.getElementById('trTo').value;
+  const fromMonth=document.getElementById('trFromMonth').value; // YYYY-MM
+  const toMonth=document.getElementById('trToMonth').value;
+  const note=(document.getElementById('trNote').value||'').trim();
+  if(!amt||amt<=0){toast('Escribe un monto');return;}
+  if(!fromMonth||!toMonth){toast('Elegí los meses');return;}
+  if(fromB===toB && fromMonth===toMonth){toast('Origen y destino no pueden ser iguales');return;}
+  // if editing, revert first
+  if(st.editId){
+    const anyLeg=S.tx.find(x=>x.transferId===st.editId);
+    if(anyLeg) deleteTx(anyLeg.id);
+  }
+  const tid=st.editId || ('tr_'+uid());
+  const lastDay=ym=>{const [y,m]=ym.split('-').map(Number);return `${ym}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;};
+  const dateOut=lastDay(fromMonth), dateIn=lastDay(toMonth);
+  const out=makeLegTx({tid,side:'out',bucket:fromB,other:toB,amt,date:dateOut,note});
+  const inc=makeLegTx({tid,side:'in', bucket:toB,other:fromB,amt,date:dateIn, note});
+  [out,inc].forEach(t=>{S.tx.push(t); applyTx(t);});
+  save();closeSheet();render();toast('Traspaso registrado');
+}
+
 function debtSheet(d){
   const e=d||{desc:'',amount:'',months:'',who:''};
   openSheet(`<h2>${d?'Editar deuda':'Me deben'}<button class="x" data-close>✕</button></h2>
@@ -1189,6 +1265,7 @@ document.body.addEventListener('click',e=>{
   const ge=t.closest('[data-goaledit]'); if(ge)return goalSheet(S.savings.find(x=>x.id===ge.dataset.goaledit));
   const ie=t.closest('[data-invedit]'); if(ie)return indexSheet(S.investments.find(x=>x.id===ie.dataset.invedit));
   const de=t.closest('[data-debt]'); if(de)return debtSheet(S.debts.find(x=>x.id===de.dataset.debt));
+  const tre=t.closest('[data-tredit]'); if(tre)return transferSheet(tre.dataset.tredit);
   const ec=t.closest('[data-editcat]'); if(ec)return catSheet(ec.dataset.editcat);
   const yn=t.closest('[data-yearnav]'); if(yn){yearSheet(summaryYear+(+yn.dataset.yearnav));return;}
   const gm=t.closest('[data-gomonth]'); if(gm){curYear=summaryYear;curMonth=+gm.dataset.gomonth;closeSheet();render();go('inicio');return;}
@@ -1203,6 +1280,7 @@ document.getElementById('deployBtn').onclick=deploySheet;
 document.getElementById('poolHero').onclick=editPoolSheet;
 document.getElementById('addIncome').onclick=()=>quickAdd('income');
 document.getElementById('addDebt').onclick=()=>debtSheet(null);
+document.getElementById('newTransfer').onclick=()=>transferSheet(null);
 document.getElementById('expJson').onclick=exportJson;
 document.getElementById('expCsv').onclick=exportCsv;
 document.getElementById('impJson').onclick=()=>document.getElementById('fileIn').click();
